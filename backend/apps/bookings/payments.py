@@ -23,7 +23,17 @@ def build_signature(data):
     ).hexdigest()
 
 
-def create_payment_link(*, booking, return_url, cancel_url):
+def create_payos_payment_request(
+    *,
+    order_code,
+    amount_vnd,
+    description,
+    buyer_name,
+    buyer_email,
+    item_name,
+    return_url,
+    cancel_url,
+):
     if not (
         settings.PAYOS_CLIENT_ID
         and settings.PAYOS_API_KEY
@@ -31,18 +41,16 @@ def create_payment_link(*, booking, return_url, cancel_url):
     ):
         raise PayOSError("PayOS is not configured.")
 
-    amount = amount_to_vnd(booking.deposit_amount)
+    amount = amount_to_vnd(amount_vnd)
     payload = {
-        "orderCode": booking.payos_order_code,
+        "orderCode": order_code,
         "amount": amount,
-        "description": f"Coc booking {booking.id}",
-        "buyerName": booking.student.get_full_name()
-        or booking.student.username
-        or booking.student.email,
-        "buyerEmail": booking.student.email,
+        "description": str(description)[:25],
+        "buyerName": buyer_name,
+        "buyerEmail": buyer_email,
         "items": [
             {
-                "name": f"Dat coc buoi hoc {booking.subject.name if booking.subject else ''}".strip(),
+                "name": item_name,
                 "quantity": 1,
                 "price": amount,
             }
@@ -73,6 +81,21 @@ def create_payment_link(*, booking, return_url, cancel_url):
     if response.status_code >= 400 or data.get("code") != "00":
         raise PayOSError(data.get("desc") or data.get("message") or "PayOS error.")
     return data["data"]
+
+
+def create_payment_link(*, booking, return_url, cancel_url):
+    return create_payos_payment_request(
+        order_code=booking.payos_order_code,
+        amount_vnd=booking.deposit_amount,
+        description=f"Coc booking {booking.id}",
+        buyer_name=booking.student.get_full_name()
+        or booking.student.username
+        or booking.student.email,
+        buyer_email=booking.student.email,
+        item_name=f"Dat coc buoi hoc {booking.subject.name if booking.subject else ''}".strip(),
+        return_url=return_url,
+        cancel_url=cancel_url,
+    )
 
 
 def get_payment_request(order_code):

@@ -19,6 +19,22 @@ MAX_TUTOR_BIO_LENGTH = 1000
 DEFAULT_TUTOR_HOURLY_RATE = 70000
 CCCD_PATTERN = re.compile(r"^\d{12}$")
 TEMP_PASSWORD_ALPHABET = string.ascii_letters + string.digits
+CV_ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".jpg", ".jpeg", ".png", ".webp"}
+CV_MAX_FILE_SIZE = 10 * 1024 * 1024
+
+
+def validate_cv_file(cv_file):
+    if not cv_file:
+        return None
+    name = getattr(cv_file, "name", "") or ""
+    suffix = f".{name.rsplit('.', 1)[-1].lower()}" if "." in name else ""
+    if suffix not in CV_ALLOWED_EXTENSIONS:
+        raise ValueError(
+            "CV phải có định dạng PDF, DOC, DOCX hoặc ảnh (JPG, PNG, WEBP)."
+        )
+    if getattr(cv_file, "size", 0) > CV_MAX_FILE_SIZE:
+        raise ValueError("Dung lượng file CV không được vượt quá 10MB.")
+    return cv_file
 
 
 def _unique_username(email):
@@ -57,7 +73,7 @@ def register_tutor(data, files):
     ]
     missing_fields = [field for field in required_fields if not data.get(field)]
     missing_files = [
-        field for field in ["avatar", "id_front", "id_back"] if not files.get(field)
+        field for field in ["avatar"] if not files.get(field)
     ]
     teaching_levels = (
         data.getlist("teaching_levels")
@@ -84,6 +100,8 @@ def register_tutor(data, files):
 
     if cccd_number and TutorProfile.objects.filter(cccd_number=cccd_number).exists():
         raise ValueError("So CCCD nay da duoc su dung.")
+
+    cv_file = validate_cv_file(files.get("cv_file") or files.get("cv"))
 
     with transaction.atomic():
         user = User.objects.create_user(
@@ -114,10 +132,16 @@ def register_tutor(data, files):
             cccd_number=cccd_number or None,
             id_front=files.get("id_front"),
             id_back=files.get("id_back"),
+            cv_file=cv_file,
             status="PENDING",
         )
 
-        for file in files.getlist("achievements"):
+        achievement_files = (
+            files.getlist("achievements")
+            if hasattr(files, "getlist")
+            else (files.get("achievements") or [])
+        )
+        for file in achievement_files:
             TutorAchievement.objects.create(tutor=profile, image=file)
 
         transaction.on_commit(
@@ -159,6 +183,7 @@ def approve_tutor_registration(profile):
             "bio": profile.bio,
             "location": profile.teaching_region or profile.address,
             "experience_years": profile.experience_years,
+            "cv_file": profile.cv_file.name if profile.cv_file else "",
         },
     )
     teaching_profile.full_name = profile.full_name
@@ -166,9 +191,11 @@ def approve_tutor_registration(profile):
     teaching_profile.bio = profile.bio
     teaching_profile.location = profile.teaching_region or profile.address
     teaching_profile.experience_years = profile.experience_years
-    teaching_profile.save(
-        update_fields=["full_name", "title", "bio", "location", "experience_years"]
-    )
+    update_fields = ["full_name", "title", "bio", "location", "experience_years"]
+    if profile.cv_file and not teaching_profile.cv_file:
+        teaching_profile.cv_file = profile.cv_file.name
+        update_fields.append("cv_file")
+    teaching_profile.save(update_fields=update_fields)
 
     level = ", ".join(profile.teaching_levels or []) or "Mọi trình độ"
     for name in _subject_names(profile.subjects_text):
@@ -189,6 +216,15 @@ def approve_tutor_registration(profile):
 
     send_tutor_registration_result_email.delay(
         profile.user.email, profile.full_name, True, "", temporary_password
+    )
+    from apps.notifications.tasks import create_notification
+
+    create_notification(
+        user_id=profile.user_id,
+        title="Hồ sơ gia sư đã được duyệt",
+        message="Chúc mừng! Hồ sơ gia sư của bạn đã được phê duyệt. Hãy hoàn thiện lịch dạy và học phí.",
+        notification_type="success",
+        link="/tutor/settings",
     )
     return profile
 

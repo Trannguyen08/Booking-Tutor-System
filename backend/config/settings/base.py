@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from decouple import config
 from datetime import timedelta
+from celery.schedules import crontab
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 LOG_DIR = BASE_DIR / "logs"
@@ -36,6 +37,7 @@ INSTALLED_APPS = [
     "apps.admin_portal",
     "apps.ai_reviews",
     "apps.courses",
+    "apps.online_classes",
 ]
 
 MIDDLEWARE = [
@@ -124,6 +126,17 @@ CELERY_TASK_ROUTES = {
     },
     "apps.courses.tasks.moderate_tutor_student_feedback": {
         "queue": "ai",
+    },
+}
+
+CELERY_BEAT_SCHEDULE = {
+    "online-class-payment-reminders": {
+        "task": "apps.online_classes.tasks.send_online_class_payment_reminders",
+        "schedule": crontab(hour=8, minute=0),
+    },
+    "online-class-overdue-kick": {
+        "task": "apps.online_classes.tasks.process_overdue_online_class_enrollments",
+        "schedule": crontab(hour=0, minute=30),
     },
 }
 

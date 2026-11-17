@@ -471,8 +471,8 @@ docker compose exec django python manage.py createsuperuser
 
 | URL | Mô tả |
 |---|---|
-| **http://localhost:8000** | Ứng dụng chính (Frontend + API) |
-| **http://localhost:8000/api/** | REST API |
+| **http://localhost:5173** | Ứng dụng Frontend (Vite React SPA) |
+| **http://localhost:8000/api/** | Backend REST API (Django) |
 | **http://localhost:8010/health** | AI Service health check |
 | **http://localhost:5050** | pgAdmin (quản lý database) |
 
@@ -486,7 +486,6 @@ Kết quả mong đợi – tất cả services đều `Up`:
 
 ```
 NAME                              STATUS
-giasuonline-nginx-1               Up
 giasuonline-django-1              Up
 giasuonline-channels-1            Up
 giasuonline-ai_service-1          Up
@@ -599,10 +598,8 @@ GiaSuOnline/
 │       ├── schemas/            # Pydantic request/response models
 │       └── utils/
 │
-├── nginx/conf.d/               # Nginx reverse proxy config
 ├── docs/                       # Tài liệu dự án
-├── .github/workflows/          # CI/CD pipelines
-├── docker-compose.yml          # Dev stack (11 services)
+├── docker-compose.yml          # Dev stack
 ├── docker-compose.prod.yml     # Production stack
 └── .env.example                # Template biến môi trường
 ```

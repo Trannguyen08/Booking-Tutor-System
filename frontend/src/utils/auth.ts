@@ -11,6 +11,7 @@ const TUTOR_PORTAL_PATHS = new Set([
   'support',
   'settings',
   'courses',
+  'online-classes',
 ]);
 
 const AUTH_KEYS: Record<AuthRole, { access: string; refresh: string; user: string }> = {
@@ -85,6 +86,11 @@ export const getRefreshToken = (role: AuthRole = getAuthRoleFromPath()) =>
 
 export const setAccessToken = (access: string, role: AuthRole = getAuthRoleFromPath()) => {
   localStorage.setItem(AUTH_KEYS[role].access, access);
+  dispatchAuthChanged();
+};
+
+export const updateStoredUser = (user: any, role: AuthRole = getAuthRoleFromPath()) => {
+  localStorage.setItem(AUTH_KEYS[role].user, JSON.stringify(user));
   dispatchAuthChanged();
 };
 

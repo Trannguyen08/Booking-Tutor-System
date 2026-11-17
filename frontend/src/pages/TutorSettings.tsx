@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
   CheckCircle2,
+  Download,
   Edit3,
   EyeOff,
+  FileText,
   Image as ImageIcon,
   Lock,
   Plus,
@@ -11,6 +13,8 @@ import {
   ShieldCheck,
   ToggleLeft,
   ToggleRight,
+  Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import client from '../api/client';
@@ -90,6 +94,8 @@ const TutorSettings: React.FC = () => {
   const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '' });
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [subjectEditor, setSubjectEditor] = useState<any>(null);
+  const [isUploadingCv, setIsUploadingCv] = useState(false);
+  const cvInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchProfile();
@@ -250,6 +256,41 @@ const TutorSettings: React.FC = () => {
     const next = [...(formData.subjects || [])];
     next[idx] = { ...next[idx], is_active: next[idx].is_active === false };
     setFormData({ ...formData, subjects: next });
+  };
+
+  const handleCvUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Dung lượng file CV không được vượt quá 10MB.', 'error');
+      return;
+    }
+    try {
+      setIsUploadingCv(true);
+      const updated = await tutorService.uploadCv(file);
+      setFormData((prev: any) => ({ ...prev, cv_url: updated.cv_url, cv_filename: updated.cv_filename }));
+      await fetchProfile();
+      showToast('Đã cập nhật CV thành công.', 'success');
+    } catch (error: any) {
+      showToast(error.response?.data?.error || 'Tải lên CV thất bại.', 'error');
+    } finally {
+      setIsUploadingCv(false);
+    }
+  };
+
+  const handleRemoveCv = async () => {
+    try {
+      setIsUploadingCv(true);
+      await tutorService.removeCv();
+      setFormData((prev: any) => ({ ...prev, cv_url: '', cv_filename: '' }));
+      await fetchProfile();
+      showToast('Đã xóa CV khỏi hồ sơ công khai.', 'success');
+    } catch (error: any) {
+      showToast(error.response?.data?.error || 'Không thể xóa CV.', 'error');
+    } finally {
+      setIsUploadingCv(false);
+    }
   };
 
   if (!formData) {
@@ -443,6 +484,69 @@ const TutorSettings: React.FC = () => {
             ))
           )}
         </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <FileText className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-950">CV / Hồ sơ năng lực công khai</h3>
+              <p className="text-sm font-semibold text-slate-500">Học viên và phụ huynh có thể xem CV này trên trang hồ sơ của bạn (PDF, DOC/DOCX hoặc ảnh, tối đa 10MB).</p>
+            </div>
+          </div>
+          <input
+            ref={cvInputRef}
+            type="file"
+            accept=".pdf,.doc,.docx,image/*"
+            className="hidden"
+            onChange={handleCvUpload}
+          />
+          <button
+            type="button"
+            disabled={isUploadingCv}
+            onClick={() => cvInputRef.current?.click()}
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+          >
+            <Upload className="h-4 w-4" />
+            {isUploadingCv ? 'Đang tải...' : formData.cv_url ? 'Thay đổi CV' : 'Tải lên CV'}
+          </button>
+        </div>
+
+        {formData.cv_url ? (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-slate-900">{formData.cv_filename || 'CV gia sư'}</p>
+              <p className="mt-0.5 text-xs font-semibold text-emerald-700">Đang hiển thị công khai trên hồ sơ</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <a
+                href={formData.cv_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Xem CV
+              </a>
+              <button
+                type="button"
+                disabled={isUploadingCv}
+                onClick={handleRemoveCv}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Gỡ CV
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm font-semibold text-slate-400">
+            Bạn chưa tải lên CV công khai.
+          </div>
+        )}
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">

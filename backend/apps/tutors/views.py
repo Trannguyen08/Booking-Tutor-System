@@ -1,11 +1,17 @@
 from rest_framework import status, permissions
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
+import mimetypes
+
 from django.db import transaction
 from django.db.models import Q, Min, Sum
 from datetime import time
 from django.conf import settings
+from django.http import FileResponse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.clickjacking import xframe_options_exempt
 import json
 from urllib import request as urlrequest
 from urllib.error import URLError, HTTPError
@@ -36,6 +42,7 @@ from core.cache_utils import get_cached_response, invalidate_cache_groups, set_c
 
 class TutorSettingsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
         try:
@@ -55,11 +62,39 @@ class TutorSettingsView(APIView):
             return Response(serializer.data)
 
     def patch(self, request):
+        from apps.users.services.tutor_registration import validate_cv_file
+
         try:
             profile = request.user.teaching_profile
+            uploaded_cv = request.FILES.get("cv_file") or request.FILES.get("cv")
+            if uploaded_cv:
+                try:
+                    validate_cv_file(uploaded_cv)
+                except ValueError as exc:
+                    return Response(
+                        {"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+            if uploaded_cv and "cv_file" not in data:
+                data["cv_file"] = uploaded_cv
+
+            remove_cv = str(request.data.get("remove_cv", "")).lower() in ("true", "1", "yes")
+            if remove_cv:
+                profile.cv_file = None
+                profile.save(update_fields=["cv_file"])
+                reg_profile = getattr(request.user, "tutor_profile", None)
+                if reg_profile and reg_profile.cv_file:
+                    reg_profile.cv_file = None
+                    reg_profile.save(update_fields=["cv_file"])
+
+            if request.FILES.get("avatar"):
+                request.user.avatar = request.FILES.get("avatar")
+                request.user.save(update_fields=["avatar"])
+
             serializer = TutorProfileSerializer(
                 profile,
-                data=request.data,
+                data=data,
                 partial=True,
                 context={"request": request, "include_inactive_subjects": True},
             )
@@ -90,7 +125,7 @@ def profile_completion(profile):
         bool(profile.experience_years),
         profile.tutor_subjects.exists(),
         bool(getattr(profile.user, "avatar", None)),
-        bool(getattr(registration, "cccd_number", "")),
+        bool(profile.cv_file or getattr(registration, "cv_file", None)),
         bool(getattr(registration, "teaching_levels", [])),
     ]
     return round((sum(checks) / len(checks)) * 100)
@@ -592,7 +627,9 @@ class TutorPublicListView(APIView):
             queryset = queryset.order_by("-rating_avg", "-total_reviews")
 
         serializer = TutorProfileSerializer(
-            queryset.distinct(), many=True, context={"request": request}
+            queryset.distinct(),
+            many=True,
+            context={"request": request, "public_view": True},
         )
         set_cached_response("tutors", serializer.data, request, "public-list")
         return Response(serializer.data)
@@ -643,7 +680,9 @@ class TutorPublicDetailView(APIView):
                 or not profile.tutor_subjects.filter(is_active=True).exists()
             ):
                 raise TutorProfile.DoesNotExist
-            serializer = TutorProfileSerializer(profile, context={"request": request})
+            serializer = TutorProfileSerializer(
+                profile, context={"request": request, "public_view": True}
+            )
             set_cached_response("tutors", serializer.data, request, f"public-detail:{pk}")
             return Response(serializer.data)
         except TutorProfile.DoesNotExist:
@@ -671,6 +710,54 @@ class TutorPublicReviewListView(APIView):
         )
 
 
+@method_decorator(xframe_options_exempt, name="dispatch")
+class TutorPublicCVView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, pk):
+        try:
+            profile = TutorProfile.objects.select_related(
+                "user", "user__tutor_profile"
+            ).get(pk=pk, is_available=True)
+        except TutorProfile.DoesNotExist:
+            return Response(
+                {"error": "Tutor not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        cv_field = profile.cv_file
+        if not cv_field:
+            registration = getattr(profile.user, "tutor_profile", None)
+            cv_field = registration.cv_file if registration else None
+
+        if not cv_field:
+            return Response(
+                {"error": "CV not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        filename = cv_field.name.rsplit("/", 1)[-1]
+        content_type, _ = mimetypes.guess_type(filename)
+        try:
+            handle = cv_field.open("rb")
+        except Exception:
+            return Response(
+                {"error": "CV file unavailable"}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        as_attachment = str(request.query_params.get("download", "")).lower() in (
+            "1",
+            "true",
+        )
+        response = FileResponse(
+            handle,
+            content_type=content_type or "application/octet-stream",
+            as_attachment=as_attachment,
+            filename=filename,
+        )
+        if not as_attachment:
+            response["Content-Disposition"] = f'inline; filename="{filename}"'
+        return response
+
+
 class TutorQuickSearchView(APIView):
     permission_classes = [permissions.AllowAny]
 
@@ -686,7 +773,9 @@ class TutorQuickSearchView(APIView):
         criteria = ai_result.get("criteria") or {}
         queryset = self.query_tutors(criteria)
         serializer = TutorProfileSerializer(
-            queryset[:12], many=True, context={"request": request}
+            queryset[:12],
+            many=True,
+            context={"request": request, "public_view": True},
         )
         return Response(
             {

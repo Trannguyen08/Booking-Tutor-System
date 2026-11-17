@@ -26,7 +26,7 @@ client.interceptors.response.use(
             const authRole = getAuthRoleFromPath();
             try {
                 const refreshToken = getRefreshToken(authRole);
-                const res = await axios.post('/api/auth/refresh/', { refresh: refreshToken });
+                const res = await publicClient.post('/auth/token/refresh/', { refresh: refreshToken });
                 setAccessToken(res.data.access, authRole);
                 originalRequest.headers.Authorization = `Bearer ${res.data.access}`;
                 return client(originalRequest);

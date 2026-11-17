@@ -1,15 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { clearAuth, getStoredUser } from '../../../utils/auth';
+import { notificationsApi, NotificationItem } from '../../../api/notifications';
 
 const Header: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
 
+  const fetchNotifications = useCallback(async () => {
+    if (!getStoredUser()) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const res = await notificationsApi.list();
+      setNotifications(res.results || []);
+      setUnreadCount(res.unread_count || 0);
+    } catch {
+      // ignore unauthenticated/network errors silently in header
+    }
+  }, []);
+
   useEffect(() => {
-    const syncUser = () => setUser(getStoredUser());
+    const syncUser = () => {
+      setUser(getStoredUser());
+      fetchNotifications();
+    };
     syncUser();
     window.addEventListener('auth-changed', syncUser);
     window.addEventListener('storage', syncUser);
@@ -17,7 +39,23 @@ const Header: React.FC = () => {
       window.removeEventListener('auth-changed', syncUser);
       window.removeEventListener('storage', syncUser);
     };
-  }, [location]);
+  }, [location, fetchNotifications]);
+
+  const handleMarkRead = async (item: NotificationItem) => {
+    if (!item.is_read) {
+      await notificationsApi.markRead(item.id).catch(() => {});
+      setNotifications(prev => prev.map(n => (n.id === item.id ? { ...n, is_read: true } : n)));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    }
+    setIsNotifOpen(false);
+    if (item.link) navigate(item.link);
+  };
+
+  const handleMarkAllRead = async () => {
+    await notificationsApi.markAllRead().catch(() => {});
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
+  };
 
   const handleLogout = () => {
     clearAuth();
@@ -42,6 +80,7 @@ const Header: React.FC = () => {
         <nav className="hidden md:flex items-center gap-8">
           {[
             { label: 'Tìm gia sư', path: '/find-tutors' },
+            { label: 'Lớp học online', path: '/online-classes' },
             { label: 'Khóa học của tôi', path: '/my-courses' },
             { label: 'Cách hoạt động', path: '/how-it-works' },
           ].map((item) => (
@@ -76,10 +115,58 @@ const Header: React.FC = () => {
           {user ? (
             <div className="relative flex items-center gap-4">
               {/* Notification Icon */}
-              <button className="relative p-2 text-gray-400 hover:text-[#5a5ce6] transition-colors bg-gray-50 rounded-xl">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-                <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 border-2 border-white rounded-full"></span>
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNotifOpen(prev => !prev);
+                    setIsDropdownOpen(false);
+                  }}
+                  aria-label="Thông báo"
+                  className="relative p-2 text-gray-400 hover:text-[#5a5ce6] transition-colors bg-gray-50 rounded-xl"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 min-w-[8px] h-2 bg-red-500 border-2 border-white rounded-full"></span>
+                  )}
+                </button>
+                {isNotifOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setIsNotifOpen(false)}></div>
+                    <div className="absolute right-0 mt-3 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-20 overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                        <span className="text-sm font-bold text-gray-900">Thông báo ({unreadCount})</span>
+                        {unreadCount > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleMarkAllRead}
+                            className="text-xs font-bold text-[#5a5ce6] hover:underline"
+                          >
+                            Đánh dấu đã đọc
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-80 overflow-y-auto divide-y divide-gray-50">
+                        {notifications.length === 0 ? (
+                          <p className="p-6 text-center text-xs font-semibold text-gray-400">Chưa có thông báo nào.</p>
+                        ) : (
+                          notifications.map(item => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() => handleMarkRead(item)}
+                              className={`w-full text-left px-4 py-3 hover:bg-indigo-50/40 transition ${item.is_read ? 'bg-white' : 'bg-indigo-50/30'}`}
+                            >
+                              <p className="text-xs font-extrabold text-gray-900">{item.title}</p>
+                              <p className="mt-0.5 text-xs text-gray-600 line-clamp-2">{item.message}</p>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* User Profile */}
               <div className="relative">

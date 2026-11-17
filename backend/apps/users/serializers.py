@@ -6,26 +6,44 @@ User = get_user_model()
 
 
 class UserSerializer(serializers.ModelSerializer):
+    avatar_url = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
             "id",
             "username",
+            "first_name",
+            "last_name",
             "email",
             "phone",
+            "bio",
             "is_tutor",
             "is_verified",
             "is_staff",
             "is_superuser",
             "avatar",
+            "avatar_url",
             "created_at",
         )
         read_only_fields = (
             "id",
+            "email",
             "created_at",
+            "is_tutor",
             "is_verified",
             "is_staff",
             "is_superuser",
+            "avatar_url",
+        )
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return ""
+        request = self.context.get("request")
+        url = obj.avatar.url
+        return (
+            request.build_absolute_uri(url) if request and url.startswith("/") else url
         )
 
 
@@ -74,6 +92,18 @@ class GoogleAuthSerializer(serializers.Serializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(write_only=True, required=True)
+    new_password = serializers.CharField(
+        write_only=True, required=True, validators=[validate_password]
+    )
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+    code = serializers.CharField(max_length=6, required=True)
     new_password = serializers.CharField(
         write_only=True, required=True, validators=[validate_password]
     )

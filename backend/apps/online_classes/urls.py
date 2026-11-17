@@ -1,0 +1,104 @@
+from django.urls import path
+
+from .views import (
+    AdminOnlineClassActionView,
+    AdminOnlineClassOverviewView,
+    AdminOnlineRefundActionView,
+    AdminOnlineReviewActionView,
+    AdminRunBillingWorkersView,
+    OnlineClassPaymentVerifyView,
+    PublicOnlineClassDetailView,
+    PublicOnlineClassListView,
+    StudentMyOnlineClassesView,
+    StudentOnlineClassEnrollView,
+    StudentOnlineClassPayNextView,
+    StudentOnlineClassReviewCreateView,
+    TutorKickStudentView,
+    TutorOnlineClassDetailView,
+    TutorOnlineClassListCreateView,
+    TutorOnlineClassSessionCreateView,
+    TutorOnlineClassSessionUpdateView,
+)
+
+urlpatterns = [
+    # Public & Student
+    path("public/", PublicOnlineClassListView.as_view(), name="online-class-public-list"),
+    path(
+        "public/<int:pk>/",
+        PublicOnlineClassDetailView.as_view(),
+        name="online-class-public-detail",
+    ),
+    path(
+        "public/<int:pk>/enroll/",
+        StudentOnlineClassEnrollView.as_view(),
+        name="online-class-enroll",
+    ),
+    path(
+        "public/<int:pk>/review/",
+        StudentOnlineClassReviewCreateView.as_view(),
+        name="online-class-review",
+    ),
+    path(
+        "enrollments/<int:enrollment_id>/pay-next/",
+        StudentOnlineClassPayNextView.as_view(),
+        name="online-class-pay-next",
+    ),
+    path(
+        "payments/verify/",
+        OnlineClassPaymentVerifyView.as_view(),
+        name="online-class-payment-verify",
+    ),
+    path(
+        "my-enrollments/",
+        StudentMyOnlineClassesView.as_view(),
+        name="online-class-my-enrollments",
+    ),
+    # Tutor
+    path("tutor/", TutorOnlineClassListCreateView.as_view(), name="tutor-online-classes"),
+    path(
+        "tutor/<int:pk>/",
+        TutorOnlineClassDetailView.as_view(),
+        name="tutor-online-class-detail",
+    ),
+    path(
+        "tutor/<int:pk>/sessions/",
+        TutorOnlineClassSessionCreateView.as_view(),
+        name="tutor-online-class-session-create",
+    ),
+    path(
+        "tutor/sessions/<int:session_id>/",
+        TutorOnlineClassSessionUpdateView.as_view(),
+        name="tutor-online-class-session-update",
+    ),
+    path(
+        "tutor/enrollments/<int:enrollment_id>/kick/",
+        TutorKickStudentView.as_view(),
+        name="tutor-online-class-kick",
+    ),
+    # Admin
+    path(
+        "admin/overview/",
+        AdminOnlineClassOverviewView.as_view(),
+        name="admin-online-classes-overview",
+    ),
+    path(
+        "admin/classes/<int:pk>/action/",
+        AdminOnlineClassActionView.as_view(),
+        name="admin-online-class-action",
+    ),
+    path(
+        "admin/refunds/<int:enrollment_id>/action/",
+        AdminOnlineRefundActionView.as_view(),
+        name="admin-online-class-refund-action",
+    ),
+    path(
+        "admin/reviews/<int:review_id>/action/",
+        AdminOnlineReviewActionView.as_view(),
+        name="admin-online-class-review-action",
+    ),
+    path(
+        "admin/run-billing-workers/",
+        AdminRunBillingWorkersView.as_view(),
+        name="admin-online-class-run-workers",
+    ),
+]

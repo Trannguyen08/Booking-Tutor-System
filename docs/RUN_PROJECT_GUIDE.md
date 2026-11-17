@@ -10,7 +10,6 @@ This file records the known way to run this project so an agent does not need to
 - Cache/Queue: Redis
 - Async workers: Celery
 - WebSocket: Daphne/Channels
-- Reverse proxy/static serving: Nginx
 - AI service: FastAPI/Uvicorn
 - Local runtime: Docker Compose
 
@@ -29,7 +28,6 @@ This builds and starts:
 - `redis`
 - `django`
 - `frontend`
-- `nginx`
 - `channels`
 - `ai_service`
 - `celery_worker`

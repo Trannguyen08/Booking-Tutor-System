@@ -10,6 +10,7 @@ import {
   Settings,
   Star,
   Users,
+  Video,
 } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { clearAuth, getStoredUser } from '../../utils/auth';
@@ -32,6 +33,7 @@ const TutorLayout: React.FC = () => {
     { icon: BookOpen, label: 'Booking', path: '/tutor/bookings' },
     { icon: Users, label: 'Học sinh', path: '/tutor/students' },
     { icon: GraduationCap, label: 'Khóa học', path: '/tutor/courses' },
+    { icon: Video, label: 'Lớp online', path: '/tutor/online-classes' },
     { icon: Star, label: 'Đánh giá', path: '/tutor/reviews' },
     { icon: LifeBuoy, label: 'Hỗ trợ', path: '/tutor/support' },
     { icon: Settings, label: 'Hồ sơ', path: '/tutor/settings' },

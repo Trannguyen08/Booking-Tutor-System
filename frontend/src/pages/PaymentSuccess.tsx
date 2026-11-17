@@ -2,12 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { bookingsApi } from '../api/bookings';
+import { onlineClassesApi } from '../api/onlineClasses';
 
 const PaymentSuccess: React.FC = () => {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [status, setStatus] = useState<'loading' | 'success' | 'failed'>('loading');
   const [message, setMessage] = useState('Đang xác nhận thanh toán với PayOS...');
+
+  const onlineClassId = params.get('onlineClassId');
+  const paymentId = params.get('paymentId');
 
   useEffect(() => {
     const payosReturnedPaid = params.get('status') === 'PAID';
@@ -18,21 +22,34 @@ const PaymentSuccess: React.FC = () => {
 
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          const booking = await bookingsApi.verifyPayment({
-            orderCode: params.get('orderCode'),
-            bookingId: params.get('bookingId'),
-          });
+          if (onlineClassId || paymentId) {
+            const res = await onlineClassesApi.verifyPayment({
+              orderCode: params.get('orderCode'),
+              paymentId,
+            });
+            if (res.payment?.status === 'paid') {
+              setStatus('success');
+              setMessage('Thanh toán học phí lớp online thành công! Bạn đã được ghi danh vào lớp.');
+              window.setTimeout(() => navigate(`/online-classes/${onlineClassId || res.enrollment?.online_class}`), 2000);
+              return;
+            }
+          } else {
+            const booking = await bookingsApi.verifyPayment({
+              orderCode: params.get('orderCode'),
+              bookingId: params.get('bookingId'),
+            });
 
-          if (booking.payment_status === 'paid') {
-            setStatus('success');
-            setMessage('Thanh toán cọc thành công. Hệ thống đã xác nhận booking và thông báo cho gia sư.');
-            window.setTimeout(() => navigate('/my-courses'), 2200);
-            return;
+            if (booking.payment_status === 'paid') {
+              setStatus('success');
+              setMessage('Thanh toán cọc thành công. Hệ thống đã xác nhận booking và thông báo cho gia sư.');
+              window.setTimeout(() => navigate('/my-courses'), 2200);
+              return;
+            }
           }
         } catch {
           if (attempt === maxAttempts) {
             setStatus('failed');
-            setMessage('Không xác nhận được thanh toán. Vui lòng quay lại lịch sử đăng ký để thử lại.');
+            setMessage('Không xác nhận được thanh toán. Vui lòng kiểm tra lại.');
             return;
           }
         }
@@ -43,13 +60,15 @@ const PaymentSuccess: React.FC = () => {
       }
 
       setStatus('failed');
-      setMessage('PayOS chưa ghi nhận giao dịch thành công. Bạn có thể kiểm tra lại trong lịch sử đăng ký.');
+      setMessage('PayOS chưa ghi nhận giao dịch thành công. Vui lòng thử lại sau ít phút.');
     };
 
     verify();
-  }, [navigate, params]);
+  }, [navigate, onlineClassId, params, paymentId]);
 
   const Icon = status === 'loading' ? Loader2 : status === 'success' ? CheckCircle2 : XCircle;
+  const fallbackLink = onlineClassId ? `/online-classes/${onlineClassId}` : '/registration-history';
+  const fallbackLabel = onlineClassId ? 'Quay lại lớp học online' : 'Về lịch sử đăng ký';
 
   return (
     <div className="flex min-h-[70vh] items-center justify-center bg-[#f8faff] px-6 py-12">
@@ -63,8 +82,8 @@ const PaymentSuccess: React.FC = () => {
           {status === 'success' ? 'Thanh toán thành công' : status === 'failed' ? 'Cần kiểm tra lại' : 'Đang xử lý'}
         </h1>
         <p className="mb-6 text-sm font-medium leading-relaxed text-gray-500">{message}</p>
-        <Link to="/registration-history" className="inline-flex rounded-xl bg-[#5a5ce6] px-5 py-3 text-sm font-bold text-white">
-          Về lịch sử đăng ký
+        <Link to={fallbackLink} className="inline-flex rounded-xl bg-[#5a5ce6] px-5 py-3 text-sm font-bold text-white">
+          {fallbackLabel}
         </Link>
       </div>
     </div>

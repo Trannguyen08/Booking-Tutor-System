@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
@@ -19,18 +19,36 @@ import {
   Star,
   User as UserIcon,
   Users,
+  Video,
   XCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../ui/Toast';
-import { clearAuth } from '../../utils/auth';
+import { clearAuth, getStoredUser } from '../../utils/auth';
+import { adminApi } from '../../api/admin';
 
 const AdminLayout: React.FC = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [menuSearch, setMenuSearch] = useState('');
+  const [hasPendingAlerts, setHasPendingAlerts] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const currentUser = getStoredUser();
+
+  useEffect(() => {
+    adminApi
+      .getNotifications()
+      .then((data: any) => {
+        const total = Object.values(data || {}).reduce(
+          (sum: number, val: any) => sum + (Number(val) || 0),
+          0,
+        );
+        setHasPendingAlerts(total > 0);
+      })
+      .catch(() => setHasPendingAlerts(false));
+  }, [location.pathname]);
 
   const menuItems = [
     { name: 'Tổng quan', path: '/admin/dashboard', icon: LayoutDashboard },
@@ -41,6 +59,7 @@ const AdminLayout: React.FC = () => {
     { name: 'Thanh toán', path: '/admin/payments', icon: CreditCard },
     { name: 'Lịch dạy', path: '/admin/slots', icon: CalendarClock },
     { name: 'Quản lý lớp học', path: '/admin/classes', icon: BookOpen },
+    { name: 'Lớp học online', path: '/admin/online-classes', icon: Video },
     { name: 'Yêu cầu hủy khóa', path: '/admin/course-cancellations', icon: XCircle },
     { name: 'Tài chính', path: '/admin/finance', icon: CircleDollarSign },
     { name: 'Đánh giá', path: '/admin/reviews', icon: Star },
@@ -129,20 +148,42 @@ const AdminLayout: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="group hidden w-64 items-center rounded-full bg-slate-100 px-4 py-2 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-100 lg:flex">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const q = menuSearch.trim().toLowerCase();
+                if (!q) return;
+                const matched = menuItems.find(item => item.name.toLowerCase().includes(q));
+                if (matched) {
+                  navigate(matched.path);
+                  setMenuSearch('');
+                } else {
+                  showToast('Không tìm thấy mục quản trị phù hợp.', 'info');
+                }
+              }}
+              className="group hidden w-64 items-center rounded-full bg-slate-100 px-4 py-2 transition-all focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-100 lg:flex"
+            >
               <Search className="mr-2 h-4 w-4 text-slate-400" />
-              <input type="text" placeholder="Tìm kiếm..." className="w-full border-none bg-transparent text-sm outline-none placeholder:text-slate-400" />
-            </div>
+              <input
+                type="text"
+                value={menuSearch}
+                onChange={(e) => setMenuSearch(e.target.value)}
+                placeholder="Đi tới mục quản trị..."
+                className="w-full border-none bg-transparent text-sm outline-none placeholder:text-slate-400"
+              />
+            </form>
 
             <Link to="/admin/notifications" className="relative rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100">
               <Bell className="h-5 w-5" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
+              {hasPendingAlerts && (
+                <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border-2 border-white bg-red-500" />
+              )}
             </Link>
 
             <div className="relative">
               <button onClick={() => setIsProfileOpen(!isProfileOpen)} className="flex items-center gap-2 rounded-lg p-1.5 transition-colors hover:bg-slate-100">
                 <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Admin" alt="Admin" className="h-8 w-8 rounded-full border border-slate-200" />
-                <span className="hidden text-sm font-medium text-slate-700 sm:block">Admin</span>
+                <span className="hidden text-sm font-medium text-slate-700 sm:block">{currentUser?.username || 'Admin'}</span>
                 <ChevronDown className="h-4 w-4 text-slate-400" />
               </button>
 
@@ -156,10 +197,24 @@ const AdminLayout: React.FC = () => {
                       exit={{ opacity: 0, y: 10 }}
                       className="absolute right-0 z-20 mt-2 w-48 rounded-xl border border-slate-100 bg-white py-1 shadow-lg"
                     >
-                      <button className="flex w-full items-center px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          navigate('/admin/profile');
+                        }}
+                        className="flex w-full items-center px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                      >
                         <UserIcon className="mr-3 h-4 w-4" /> Hồ sơ cá nhân
                       </button>
-                      <button className="flex w-full items-center px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileOpen(false);
+                          navigate('/admin/profile?tab=password');
+                        }}
+                        className="flex w-full items-center px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                      >
                         <Settings className="mr-3 h-4 w-4" /> Đổi mật khẩu
                       </button>
                       <hr className="my-1 border-slate-100" />

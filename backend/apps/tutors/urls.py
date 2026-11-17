@@ -10,6 +10,7 @@ from .views import (
     SubjectListView,
     TutorPublicListView,
     TutorPublicDetailView,
+    TutorPublicCVView,
     TutorPublicReviewListView,
     TutorQuickSearchView,
 )
@@ -47,6 +48,9 @@ urlpatterns = [
     path("quick-search/", TutorQuickSearchView.as_view(), name="tutor-quick-search"),
     path(
         "public/<int:pk>/", TutorPublicDetailView.as_view(), name="tutor-public-detail"
+    ),
+    path(
+        "public/<int:pk>/cv/", TutorPublicCVView.as_view(), name="tutor-public-cv"
     ),
     path(
         "public/<int:pk>/reviews/",

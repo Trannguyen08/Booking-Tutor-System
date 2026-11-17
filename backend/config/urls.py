@@ -11,6 +11,9 @@ urlpatterns = [
     path("api/ai/", include("apps.ai_proxy.urls")),
     path("api/admin/", include("apps.admin_portal.urls")),
     path("api/courses/", include("apps.courses.urls")),
+    path("api/notifications/", include("apps.notifications.urls")),
+    path("api/chat/", include("apps.chat.urls")),
+    path("api/online-classes/", include("apps.online_classes.urls")),
 ]
 
 if settings.DEBUG:

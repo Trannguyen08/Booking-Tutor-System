@@ -11,7 +11,6 @@ const initialFormData = {
   full_name: '',
   phone: '',
   email: '',
-  cccd_number: '',
   birthday: '',
   university: '',
   qualification: '',
@@ -22,7 +21,12 @@ const initialFormData = {
   address: '',
 };
 
-const loadTutorRegisterDraft = () => {
+type TutorRegisterFormData = typeof initialFormData;
+
+const CV_ALLOWED_EXTENSIONS = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png', '.webp'];
+const CV_MAX_SIZE = 10 * 1024 * 1024;
+
+const loadTutorRegisterDraft = (): { formData: TutorRegisterFormData; teachingLevels: string[] } => {
   try {
     const raw = localStorage.getItem(TUTOR_REGISTER_DRAFT_KEY);
     if (!raw) return { formData: initialFormData, teachingLevels: [] as string[] };
@@ -36,7 +40,7 @@ const loadTutorRegisterDraft = () => {
   }
 };
 
-type DocumentType = 'portrait' | 'identity_card_front' | 'identity_card_back' | 'certificate';
+type DocumentType = 'portrait' | 'certificate';
 
 type ImagePrecheckResult = {
   is_valid: boolean;
@@ -68,27 +72,21 @@ const TutorRegister: React.FC = () => {
   const draft = loadTutorRegisterDraft();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState('');
-  const [formData, setFormData] = useState(draft.formData);
+  const [formData, setFormData] = useState<TutorRegisterFormData>(draft.formData);
 
   const [avatar, setAvatar] = useState<File | null>(null);
-  const [idFront, setIdFront] = useState<File | null>(null);
-  const [idBack, setIdBack] = useState<File | null>(null);
   const [achievements, setAchievements] = useState<File[]>([]);
+  const [cvFile, setCvFile] = useState<File | null>(null);
   const [teachingLevels, setTeachingLevels] = useState<string[]>(draft.teachingLevels);
   const [prechecks, setPrechecks] = useState<Record<string, ImagePrecheckStatus>>({});
   const [duplicateWarnings, setDuplicateWarnings] = useState<string[]>([]);
 
   const avatarRef = useRef<HTMLInputElement>(null);
-  const idFrontRef = useRef<HTMLInputElement>(null);
-  const idBackRef = useRef<HTMLInputElement>(null);
   const achievementRef = useRef<HTMLInputElement>(null);
+  const cvRef = useRef<HTMLInputElement>(null);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = event.target;
-    if (name === 'cccd_number') {
-      setFormData(prev => ({ ...prev, cccd_number: value.replace(/\D/g, '').slice(0, 12) }));
-      return;
-    }
     if (name === 'experience_years') {
       const digits = value.replace(/\D/g, '');
       const nextValue = digits === '' ? '' : String(Math.min(30, Number(digits)));
@@ -99,8 +97,6 @@ const TutorRegister: React.FC = () => {
   };
 
   const fileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
-  const normalizedCccd = formData.cccd_number.replace(/\D/g, '');
-  const hasValidCccdNumber = /^\d{12}$/.test(normalizedCccd);
 
   useEffect(() => {
     localStorage.setItem(
@@ -151,18 +147,29 @@ const TutorRegister: React.FC = () => {
       setAvatar(selected[0]);
       precheckImage('avatar', selected[0], 'portrait');
     }
-    if (type === 'idFront') {
-      setIdFront(selected[0]);
-      precheckImage('idFront', selected[0], 'identity_card_front');
-    }
-    if (type === 'idBack') {
-      setIdBack(selected[0]);
-      precheckImage('idBack', selected[0], 'identity_card_back');
-    }
     if (type === 'achievement') {
       setAchievements(prev => [...prev, ...selected]);
       selected.forEach(file => precheckImage(fileKey(file), file, 'certificate'));
     }
+    event.target.value = '';
+  };
+
+  const handleCvChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const picked = event.target.files?.[0];
+    if (!picked) return;
+    const lowerName = picked.name.toLowerCase();
+    const hasAllowedExt = CV_ALLOWED_EXTENSIONS.some(ext => lowerName.endsWith(ext));
+    if (!hasAllowedExt) {
+      showToast('CV phải là file PDF, DOC, DOCX hoặc ảnh (JPG, PNG, WEBP).', 'error');
+      event.target.value = '';
+      return;
+    }
+    if (picked.size > CV_MAX_SIZE) {
+      showToast('Dung lượng file CV không được vượt quá 10MB.', 'error');
+      event.target.value = '';
+      return;
+    }
+    setCvFile(picked);
     event.target.value = '';
   };
 
@@ -178,8 +185,6 @@ const TutorRegister: React.FC = () => {
 
   const allSelectedImages = [
     ...(avatar ? [{ label: 'Ảnh chân dung', file: avatar }] : []),
-    ...(idFront ? [{ label: 'CCCD mặt trước', file: idFront }] : []),
-    ...(idBack ? [{ label: 'CCCD mặt sau', file: idBack }] : []),
     ...achievements.map((file, index) => ({ label: `Chứng chỉ / thành tích ${index + 1}`, file })),
   ];
 
@@ -237,12 +242,10 @@ const TutorRegister: React.FC = () => {
     };
     inspectDuplicates();
     return () => { cancelled = true; };
-  }, [avatar, idFront, idBack, achievements]);
+  }, [avatar, achievements]);
 
   const precheckKeysForSelectedFiles = [
     ...(avatar ? ['avatar'] : []),
-    ...(idFront ? ['idFront'] : []),
-    ...(idBack ? ['idBack'] : []),
     ...achievements.map(fileKey),
   ];
 
@@ -255,15 +258,9 @@ const TutorRegister: React.FC = () => {
     event.preventDefault();
     setSubmitMessage('');
 
-    if (formData.cccd_number && !hasValidCccdNumber) {
-      setSubmitMessage('Số CCCD phải gồm đúng 12 chữ số.');
-      showToast('Số CCCD phải gồm đúng 12 chữ số.', 'error');
-      return;
-    }
-
-    if (!avatar || !idFront || !idBack) {
-      setSubmitMessage('Vui lòng tải lên ảnh chân dung và CCCD hai mặt.');
-      showToast('Vui lòng tải lên ảnh chân dung và CCCD hai mặt.', 'error');
+    if (!avatar) {
+      setSubmitMessage('Vui lòng tải lên ảnh chân dung.');
+      showToast('Vui lòng tải lên ảnh chân dung.', 'error');
       return;
     }
 
@@ -299,11 +296,10 @@ const TutorRegister: React.FC = () => {
     }
 
     const payload = new FormData();
-    Object.entries(formData).forEach(([key, value]) => payload.append(key, value));
+    Object.entries(formData).forEach(([key, value]) => payload.append(key, String(value ?? '')));
     teachingLevels.forEach(level => payload.append('teaching_levels', level));
     if (avatar) payload.append('avatar', avatar);
-    if (idFront) payload.append('id_front', idFront);
-    if (idBack) payload.append('id_back', idBack);
+    if (cvFile) payload.append('cv_file', cvFile);
     achievements.forEach(file => payload.append('achievements', file));
 
     try {
@@ -333,7 +329,7 @@ const TutorRegister: React.FC = () => {
             </div>
             <h3 className="font-bold text-lg text-[#5a5ce6] mb-3">Xác thực hồ sơ gia sư</h3>
             <p className="text-sm text-gray-600 mb-6 leading-relaxed">
-              Ảnh chân dung rõ mặt, CCCD hai mặt và các chứng chỉ/thành tích giúp quản trị viên duyệt hồ sơ nhanh hơn, đồng thời tăng độ tin cậy khi học sinh xem hồ sơ.
+              Ảnh chân dung rõ mặt, CV năng lực và các chứng chỉ/thành tích giúp quản trị viên duyệt hồ sơ nhanh hơn, đồng thời tăng độ tin cậy khi học sinh xem hồ sơ.
             </p>
             <ul className="flex flex-col gap-3">
               <CheckItem text="Thông tin được dùng cho xét duyệt hồ sơ" />
@@ -383,7 +379,6 @@ const TutorRegister: React.FC = () => {
               <TextInput label="Họ và tên" name="full_name" value={formData.full_name} onChange={handleInputChange} required placeholder="Nhập đầy đủ họ tên" />
               <TextInput label="Số điện thoại" name="phone" value={formData.phone} onChange={handleInputChange} required placeholder="090-xxx-xxxx" />
               <TextInput label="Email" name="email" type="email" value={formData.email} onChange={handleInputChange} required placeholder="example@email.com" />
-              <TextInput label="Số CCCD" name="cccd_number" inputMode="numeric" pattern="\d{12}" maxLength={12} value={formData.cccd_number} onChange={handleInputChange} placeholder="12 chữ số trên CCCD" helper={hasValidCccdNumber ? 'Số CCCD hợp lệ.' : 'Nhập đúng 12 chữ số trên CCCD.'} />
               <DateOfBirthInput value={formData.birthday} onChange={(value: string) => setFormData(prev => ({ ...prev, birthday: value }))} />
               <TextInput label="Trường đại học" name="university" value={formData.university} onChange={handleInputChange} required placeholder="Nhập tên trường đại học" />
               <label>
@@ -462,20 +457,6 @@ const TutorRegister: React.FC = () => {
             </div>
 
             <div className="space-y-8">
-              <div>
-                <SectionTitle index="1" title="Căn cước công dân" required />
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div>
-                    <UploadBox label="Mặt trước" file={idFront} inputRef={idFrontRef} onPick={(e) => handleFileChange(e, 'idFront')} onRemove={() => { setIdFront(null); clearPrecheck('idFront'); }} large />
-                    <PrecheckMessage status={prechecks.idFront} />
-                  </div>
-                  <div>
-                    <UploadBox label="Mặt sau" file={idBack} inputRef={idBackRef} onPick={(e) => handleFileChange(e, 'idBack')} onRemove={() => { setIdBack(null); clearPrecheck('idBack'); }} large />
-                    <PrecheckMessage status={prechecks.idBack} />
-                  </div>
-                </div>
-              </div>
-
               {duplicateWarnings.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
                   <p className="font-extrabold">AI precheck phát hiện ảnh gần như trùng nhau</p>
@@ -486,7 +467,7 @@ const TutorRegister: React.FC = () => {
               )}
 
               <div>
-                <SectionTitle index="2" title="Chứng chỉ / thành tích nổi bật" helper="Không bắt buộc, có thể tải nhiều ảnh chứng nhận, giải thưởng hoặc thành tích." />
+                <SectionTitle index="1" title="Chứng chỉ / thành tích nổi bật" helper="Không bắt buộc, có thể tải nhiều ảnh chứng nhận, giải thưởng hoặc thành tích." />
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {achievements.map((file, index) => (
                     <div key={`${file.name}-${index}`}>
@@ -502,6 +483,56 @@ const TutorRegister: React.FC = () => {
                     <p className="text-[10px] text-gray-500 font-bold mt-2">THÊM ẢNH</p>
                   </button>
                 </div>
+              </div>
+
+              <div>
+                <SectionTitle
+                  index="2"
+                  title="CV / Hồ sơ năng lực"
+                  helper="Không bắt buộc (PDF, DOC, DOCX hoặc ảnh, tối đa 10MB). CV này sẽ hiển thị công khai để học viên và phụ huynh tham khảo; bạn nên ẩn thông tin riêng tư không muốn chia sẻ trên CV."
+                />
+                <input
+                  ref={cvRef}
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,image/*"
+                  onChange={handleCvChange}
+                />
+                {cvFile ? (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900">{cvFile.name}</p>
+                      <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                        {(cvFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => cvRef.current?.click()}
+                        className="rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-[#5a5ce6] hover:bg-indigo-50"
+                      >
+                        Đổi file
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCvFile(null)}
+                        className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-100"
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => cvRef.current?.click()}
+                    className="w-full rounded-2xl border-2 border-dashed border-indigo-100 bg-indigo-50/20 px-6 py-7 text-center hover:bg-indigo-50/50 transition-all"
+                  >
+                    <p className="text-sm font-bold text-[#5a5ce6]">Tải lên CV / Hồ sơ năng lực</p>
+                    <p className="mt-1 text-xs text-gray-400">Hỗ trợ PDF, DOC, DOCX, JPG, PNG, WEBP (tối đa 10MB)</p>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -634,21 +665,6 @@ const formatDisplayDate = (date: Date) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   return `${day}/${month}/${date.getFullYear()}`;
 };
-
-const UploadBox = ({ label, file, inputRef, onPick, onRemove, large = false }: any) => (
-  <div
-    role="button"
-    tabIndex={0}
-    onClick={() => inputRef.current?.click()}
-    onKeyDown={(event) => {
-      if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click();
-    }}
-    className={`${large ? 'aspect-[1.55/1] min-h-[180px]' : 'aspect-square'} border-2 border-dashed border-indigo-100 rounded-xl flex flex-col items-center justify-center text-center hover:bg-indigo-50/50 transition-all cursor-pointer overflow-hidden relative`}
-  >
-    <input type="file" ref={inputRef} onChange={onPick} className="hidden" accept="image/*" />
-    {file ? <FilePreview file={file} onRemove={onRemove} /> : <><ImageIcon /><p className="text-[11px] text-gray-500 font-semibold mt-2">{label}</p></>}
-  </div>
-);
 
 const FilePreview = ({ file, onRemove, cover = false }: { file: File; onRemove: () => void; cover?: boolean }) => (
   <div className="relative group w-full h-full bg-gray-50 rounded-xl overflow-hidden">

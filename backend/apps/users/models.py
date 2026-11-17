@@ -58,6 +58,7 @@ class TutorProfile(models.Model):
     # Storage backend sends these to S3 when USE_S3=True, or local media in dev.
     id_front = models.ImageField(upload_to="tutors/cccd/", null=True, blank=True)
     id_back = models.ImageField(upload_to="tutors/cccd/", null=True, blank=True)
+    cv_file = models.FileField(upload_to="tutors/cv/", null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     created_at = models.DateTimeField(auto_now_add=True)
 

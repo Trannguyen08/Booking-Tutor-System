@@ -140,6 +140,8 @@ class AdminTutorRegistrationSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
     id_front_url = serializers.SerializerMethodField()
     id_back_url = serializers.SerializerMethodField()
+    cv_url = serializers.SerializerMethodField()
+    cv_filename = serializers.SerializerMethodField()
     achievements = AdminTutorAchievementSerializer(many=True, read_only=True)
     teaching_profile_id = serializers.SerializerMethodField()
     guarantee_deposit_balance = serializers.SerializerMethodField()
@@ -168,6 +170,8 @@ class AdminTutorRegistrationSerializer(serializers.ModelSerializer):
             "avatar_url",
             "id_front_url",
             "id_back_url",
+            "cv_url",
+            "cv_filename",
             "achievements",
             "status",
             "registration_status",
@@ -198,6 +202,26 @@ class AdminTutorRegistrationSerializer(serializers.ModelSerializer):
 
     def get_avatar_url(self, obj):
         return self._file_url(getattr(obj.user, "avatar", None))
+
+    def get_cv_url(self, obj):
+        teaching_profile = self._teaching_profile(obj)
+        field = (
+            teaching_profile.cv_file
+            if teaching_profile and teaching_profile.cv_file
+            else obj.cv_file
+        )
+        return self._file_url(field)
+
+    def get_cv_filename(self, obj):
+        teaching_profile = self._teaching_profile(obj)
+        field = (
+            teaching_profile.cv_file
+            if teaching_profile and teaching_profile.cv_file
+            else obj.cv_file
+        )
+        if not field or not getattr(field, "name", ""):
+            return ""
+        return field.name.rsplit("/", 1)[-1]
 
     def get_subjects(self, obj):
         teaching_profile = getattr(obj.user, "teaching_profile", None)

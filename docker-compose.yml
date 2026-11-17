@@ -15,7 +15,7 @@ services:
   pgadmin:
     image: dpage/pgadmin4
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5051}:80"
     env_file: .env
     depends_on:
       postgres:
@@ -38,7 +38,8 @@ services:
     command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
     volumes:
       - ./backend:/app
-    # No ports exposed to host, accessible via Nginx on 8000
+    ports:
+      - "${DJANGO_PORT:-8002}:8000"
     env_file: .env
     depends_on:
       postgres:
@@ -122,32 +123,21 @@ services:
       postgres:
         condition: service_healthy
 
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "8000:80"
-      - "8443:443"
-    volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d
-      - ./backend/staticfiles:/app/staticfiles
-      - ./backend/media:/app/media
-      - frontend_static:/usr/share/nginx/html:ro
-    depends_on:
-      - django
-      - frontend
-
   frontend:
     build:
       context: ./frontend
-    # Build and copy files to shared volume
-    command: sh -c "npm run build && rm -rf /usr/share/nginx/html/* && cp -r dist/* /usr/share/nginx/html/"
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    ports:
+      - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
-      - frontend_static:/usr/share/nginx/html
+    environment:
+      - VITE_API_BASE_URL=http://localhost:${DJANGO_PORT:-8002}/api
     env_file: .env
+    depends_on:
+      - django
 
 volumes:
   postgres_data:
   redis_data:
-  frontend_static:

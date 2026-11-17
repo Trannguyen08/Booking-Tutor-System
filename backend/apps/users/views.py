@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from rest_framework import status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -22,6 +23,8 @@ from .serializers import (
     GoogleAuthSerializer,
     UserSerializer,
     ChangePasswordSerializer,
+    ForgotPasswordSerializer,
+    ResetPasswordSerializer,
 )
 from .tasks import send_otp_email
 from .services.tutor_registration import register_tutor
@@ -136,7 +139,7 @@ class VerifyOTPView(APIView):
         return Response(
             {
                 "message": "Xác thực thành công.",
-                "user": UserSerializer(user).data,
+                "user": UserSerializer(user, context={"request": request}).data,
                 **tokens,
             },
             status=status.HTTP_200_OK,
@@ -253,7 +256,7 @@ class LoginView(APIView):
         return Response(
             {
                 "message": "Đăng nhập thành công.",
-                "user": UserSerializer(user).data,
+                "user": UserSerializer(user, context={"request": request}).data,
                 **tokens,
             },
             status=status.HTTP_200_OK,
@@ -347,7 +350,7 @@ class GoogleLoginView(APIView):
         return Response(
             {
                 "message": "Đăng nhập Google thành công.",
-                "user": UserSerializer(user).data,
+                "user": UserSerializer(user, context={"request": request}).data,
                 **tokens,
             },
             status=status.HTTP_200_OK,
@@ -396,12 +399,18 @@ class MeView(APIView):
     """
 
     permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={"request": request}).data)
 
     def patch(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        serializer = UserSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         serializer.save()
@@ -425,3 +434,71 @@ class ChangePasswordView(APIView):
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save(update_fields=["password"])
         return Response({"message": "Doi mat khau thanh cong."})
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data["email"]
+        user = User.objects.filter(email=email, is_active=True).first()
+        if user:
+            send_otp_email.delay(email)
+
+        return Response(
+            {
+                "message": "Nếu email tồn tại trong hệ thống, mã OTP khôi phục mật khẩu đã được gửi."
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data["email"]
+        code = serializer.validated_data["code"]
+        new_password = serializer.validated_data["new_password"]
+
+        otp = (
+            OTP.objects.filter(email=email, code=code, is_used=False)
+            .order_by("-created_at")
+            .first()
+        )
+        if not otp:
+            return Response(
+                {"error": "Mã OTP không hợp lệ."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if otp.expires_at < timezone.now():
+            return Response(
+                {"error": "Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.filter(email=email, is_active=True).first()
+        if not user:
+            return Response(
+                {"error": "Tài khoản không tồn tại hoặc chưa được kích hoạt."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        with transaction.atomic():
+            otp.is_used = True
+            otp.save(update_fields=["is_used"])
+            user.set_password(new_password)
+            user.save(update_fields=["password"])
+
+        return Response(
+            {"message": "Đặt lại mật khẩu thành công. Bạn có thể đăng nhập lại."},
+            status=status.HTTP_200_OK,
+        )

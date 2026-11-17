@@ -8,6 +8,7 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
+        ("users", "0003_tutorprofile_tutorachievement"),
         migrations.swappable_dependency(settings.TUTOR_MODEL),
     ]
 

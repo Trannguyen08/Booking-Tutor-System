@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BrainCircuit, CheckCircle2, CreditCard, Eye, Loader2, Search, ShieldAlert, TriangleAlert, X } from 'lucide-react';
+import { BrainCircuit, CheckCircle2, CreditCard, Download, Eye, FileText, Loader2, Search, ShieldAlert, TriangleAlert, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { adminApi } from '../../api/admin';
 import { useAdminStore } from '../../store/useAdminStore';
@@ -383,6 +383,31 @@ const TutorProfileModal = ({
                   <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-700">
                     {tutor.bio || 'Chưa có mô tả bản thân.'}
                   </div>
+                </div>
+
+                <div>
+                  <h4 className="mb-3 text-sm font-extrabold uppercase tracking-widest text-slate-500">CV / Hồ sơ năng lực</h4>
+                  {tutor.cv_url ? (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <FileText className="h-5 w-5 text-blue-600 shrink-0" />
+                        <span className="truncate text-sm font-bold text-slate-800">{tutor.cv_filename || 'CV gia sư'}</span>
+                      </div>
+                      <a
+                        href={tutor.cv_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-extrabold text-white hover:bg-blue-700"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        Mở CV
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-sm font-semibold text-slate-400">
+                      Gia sư chưa tải lên CV
+                    </div>
+                  )}
                 </div>
 
                 <div>

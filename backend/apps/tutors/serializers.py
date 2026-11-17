@@ -1,7 +1,8 @@
 from decimal import Decimal
 
-from rest_framework import serializers
+from django.urls import reverse
 from django.utils.text import slugify
+from rest_framework import serializers
 from .models import (
     TutorProfile,
     TutorGuaranteeTransaction,
@@ -137,6 +138,9 @@ class TutorProfileSerializer(serializers.ModelSerializer):
     id_front_url = serializers.SerializerMethodField()
     id_back_url = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
+    cv_url = serializers.SerializerMethodField()
+    cv_preview_url = serializers.SerializerMethodField()
+    cv_filename = serializers.SerializerMethodField()
 
     email = serializers.EmailField(source="user.email", read_only=True)
     phone = serializers.CharField(source="user.phone", read_only=True)
@@ -169,6 +173,10 @@ class TutorProfileSerializer(serializers.ModelSerializer):
             "new_class_lock_reason",
             "location",
             "teaching_mode",
+            "cv_file",
+            "cv_url",
+            "cv_preview_url",
+            "cv_filename",
             "documents",
             "achievements",
             "university",
@@ -201,6 +209,9 @@ class TutorProfileSerializer(serializers.ModelSerializer):
             "id_front_url",
             "id_back_url",
             "avatar_url",
+            "cv_url",
+            "cv_preview_url",
+            "cv_filename",
         ]
 
     def _registration_profile(self, obj):
@@ -257,6 +268,31 @@ class TutorProfileSerializer(serializers.ModelSerializer):
 
     def get_avatar_url(self, obj):
         return self._file_url(obj.user.avatar)
+
+    def _effective_cv_field(self, obj):
+        if obj.cv_file:
+            return obj.cv_file
+        registration = self._registration_profile(obj)
+        if registration and registration.cv_file:
+            return registration.cv_file
+        return None
+
+    def get_cv_url(self, obj):
+        return self._file_url(self._effective_cv_field(obj))
+
+    def get_cv_preview_url(self, obj):
+        field = self._effective_cv_field(obj)
+        if not field:
+            return ""
+        path = reverse("tutor-public-cv", kwargs={"pk": obj.pk})
+        request = self.context.get("request")
+        return request.build_absolute_uri(path) if request else path
+
+    def get_cv_filename(self, obj):
+        field = self._effective_cv_field(obj)
+        if not field or not getattr(field, "name", ""):
+            return ""
+        return field.name.rsplit("/", 1)[-1]
 
     def get_achievements(self, obj):
         registration = self._registration_profile(obj)
@@ -346,6 +382,18 @@ class TutorProfileSerializer(serializers.ModelSerializer):
                 for item in data.get("tutor_subjects", [])
                 if item.get("is_active") is not False
             ]
+        if self.context.get("public_view"):
+            for private_field in (
+                "cccd_number",
+                "id_front_url",
+                "id_back_url",
+                "address",
+                "phone",
+                "email",
+                "birthday",
+                "cv_file",
+            ):
+                data.pop(private_field, None)
         return data
 
 

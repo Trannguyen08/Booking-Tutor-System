@@ -112,11 +112,13 @@ class TutorGuaranteeWorkflowTests(APITransactionTestCase):
             end_date=timezone.localdate(),
             hourly_rate=Decimal("100000.00"),
         )
+        past_dt = timezone.localtime(timezone.now() - timedelta(days=1))
         session = CourseSession.objects.create(
             course=course,
             session_number=1,
             title="Session 1",
-            scheduled_date=timezone.localdate(),
+            scheduled_date=past_dt.date(),
+            scheduled_time=past_dt.time().replace(microsecond=0),
         )
 
         self.client.force_authenticate(self.student)
