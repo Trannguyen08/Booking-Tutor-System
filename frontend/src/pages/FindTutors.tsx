@@ -4,6 +4,7 @@ import { CalendarDays, Plus, Search, SlidersHorizontal, Trash2 } from 'lucide-re
 import { useTutors } from '../hooks/useTutors';
 import { useDebounce } from '../hooks/useDebounce';
 import { publicClient } from '../api/client';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 
 const weekdays = [
   { value: 1, label: 'Thứ 2' },
@@ -33,10 +34,11 @@ const FindTutors: React.FC = () => {
   const [quickPrompt, setQuickPrompt] = useState('');
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickResult, setQuickResult] = useState<any | null>(null);
+  const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const debouncedSearch = useDebounce(searchQuery, 500);
   const navigate = useNavigate();
-  const { tutors, loading, fetchTutors } = useTutors();
+  const { tutors, pagination, loading, fetchTutors } = useTutors();
 
   useEffect(() => {
     const subject = searchParams.get('subject');
@@ -44,7 +46,11 @@ const FindTutors: React.FC = () => {
   }, [searchParams]);
 
   useEffect(() => {
-    const params: any = {};
+    setPage(1);
+  }, [filters, debouncedSearch]);
+
+  useEffect(() => {
+    const params: any = { page, page_size: 10 };
     Object.entries(filters).forEach(([key, value]) => {
       if (key === 'weekdays' || key === 'timeRanges') return;
       if (value) params[key] = value;
@@ -57,7 +63,7 @@ const FindTutors: React.FC = () => {
     }
     if (debouncedSearch) params.search = debouncedSearch;
     fetchTutors(params);
-  }, [filters, debouncedSearch, fetchTutors]);
+  }, [filters, debouncedSearch, page, fetchTutors]);
 
   const setFilter = (key: keyof typeof emptyFilters, value: any) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -81,7 +87,9 @@ const FindTutors: React.FC = () => {
 
   const addRange = () => setFilter('timeRanges', [...filters.timeRanges, { start: '', end: '' }]);
   const removeRange = (index: number) => setFilter('timeRanges', filters.timeRanges.filter((_, idx) => idx !== index));
-  const displayedTutors = quickResult?.tutors || tutors;
+  const isAiActive = Boolean(quickResult?.tutors);
+  const aiPaged = useClientPagination(quickResult?.tutors || [], page, 10);
+  const displayedTutors = isAiActive ? aiPaged.pagedItems : tutors;
 
   const runQuickSearch = async () => {
     if (!quickPrompt.trim()) return;
@@ -246,7 +254,8 @@ const FindTutors: React.FC = () => {
               Không có gia sư phù hợp với bộ lọc hiện tại.
             </div>
           ) : (
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 mb-12">
+            <>
+            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
               {displayedTutors.map((tutor: any) => {
                 const firstSubject = tutor.tutor_subjects?.[0];
                 return (
@@ -277,6 +286,14 @@ const FindTutors: React.FC = () => {
                 );
               })}
             </div>
+            <Pagination
+              currentPage={isAiActive ? aiPaged.currentPage : (pagination?.page || page)}
+              totalCount={isAiActive ? aiPaged.totalCount : (pagination?.count ?? tutors.length)}
+              pageSize={10}
+              totalPages={isAiActive ? aiPaged.totalPages : pagination?.total_pages}
+              onPageChange={setPage}
+            />
+          </>
           )}
         </main>
       </div>

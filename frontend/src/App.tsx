@@ -31,7 +31,8 @@ import NotFound from './pages/NotFound';
 import OnlineClasses from './pages/OnlineClasses';
 import OnlineClassDetail from './pages/OnlineClassDetail';
 import TutorOnlineClasses from './pages/TutorOnlineClasses';
-import AdminOnlineClassManagement from './pages/Admin/OnlineClassManagement';
+import TutorOnlineClassStudents from './pages/TutorOnlineClassStudents';
+import TutorAnalytics from './pages/TutorAnalytics';
 
 // Course Pages
 import MyCourses from './pages/MyCourses';
@@ -43,20 +44,18 @@ import { TutorCourseList, TutorCourseDetail } from './pages/TutorCourseManagemen
 // Admin Pages
 import AdminLayout from './components/layout/AdminLayout';
 import AdminDashboard from './pages/Admin/Dashboard';
-import TutorManagement from './pages/Admin/TutorManagement';
 import UserManagement from './pages/Admin/UserManagement';
-import AdminCourseManagement from './pages/Admin/CourseManagement';
-import AdminFinanceManagement from './pages/Admin/FinanceManagement';
-import CancellationManagement from './pages/Admin/CancellationManagement';
+import {
+  AdminBookingsWorkspace,
+  AdminClassesWorkspace,
+  AdminFinanceWorkspace,
+  AdminReportsWorkspace,
+  AdminTutorsWorkspace,
+} from './pages/Admin/AdminWorkspaces';
 import {
   AdminNotifications,
-  BookingManagement,
-  PaymentManagement,
-  ReportManagement,
   ReviewManagement,
   SettingsManagement,
-  SlotManagement,
-  ViolationManagement,
 } from './pages/Admin/Operations';
 import { getAccessToken, getStoredUser } from './utils/auth';
 
@@ -135,25 +134,27 @@ function App() {
               <Route path="courses" element={<TutorCourseList />} />
               <Route path="courses/:id" element={<TutorCourseDetail />} />
               <Route path="online-classes" element={<TutorOnlineClasses />} />
+              <Route path="online-classes/:id/students" element={<TutorOnlineClassStudents />} />
+              <Route path="analytics" element={<TutorAnalytics />} />
               <Route index element={<Navigate to="/tutor/dashboard" replace />} />
             </Route>
 
             {/* Admin Portal Pages */}
             <Route path="/admin" element={<ProtectedRoute role="admin"><AdminLayout /></ProtectedRoute>}>
               <Route path="dashboard" element={<AdminDashboard />} />
-              <Route path="tutor-approvals" element={<TutorManagement mode="approval" />} />
-              <Route path="tutors" element={<TutorManagement mode="management" />} />
+              <Route path="tutor-approvals" element={<AdminTutorsWorkspace mode="approval" />} />
+              <Route path="tutors" element={<AdminTutorsWorkspace mode="management" />} />
+              <Route path="tutor-rankings" element={<AdminReportsWorkspace tab="rankings" />} />
               <Route path="users" element={<UserManagement />} />
-              <Route path="bookings" element={<BookingManagement />} />
-              <Route path="payments" element={<PaymentManagement />} />
-              <Route path="slots" element={<SlotManagement />} />
-              <Route path="classes" element={<AdminCourseManagement />} />
-              <Route path="online-classes" element={<AdminOnlineClassManagement />} />
-              <Route path="course-cancellations" element={<CancellationManagement />} />
-              <Route path="finance" element={<AdminFinanceManagement />} />
+              <Route path="bookings" element={<AdminBookingsWorkspace tab="bookings" />} />
+              <Route path="payments" element={<AdminFinanceWorkspace tab="payments" />} />
+              <Route path="slots" element={<AdminBookingsWorkspace tab="slots" />} />
+              <Route path="classes" element={<AdminClassesWorkspace tab="classes" />} />
+              <Route path="online-classes" element={<AdminClassesWorkspace tab="online" />} />
+              <Route path="course-cancellations" element={<AdminClassesWorkspace tab="cancellations" />} />
+              <Route path="finance" element={<AdminFinanceWorkspace tab="finance" />} />
               <Route path="reviews" element={<ReviewManagement />} />
-              <Route path="violations" element={<ViolationManagement />} />
-              <Route path="reports" element={<ReportManagement />} />
+              <Route path="reports" element={<AdminReportsWorkspace tab="reports" />} />
               <Route path="settings" element={<SettingsManagement />} />
               <Route path="notifications" element={<AdminNotifications />} />
               <Route path="profile" element={<Profile />} />

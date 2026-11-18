@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
+  BarChart3,
   BookOpen,
   CalendarDays,
   GraduationCap,
@@ -28,12 +29,13 @@ const TutorLayout: React.FC = () => {
   };
 
   const menuItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/tutor/dashboard' },
+    { icon: LayoutDashboard, label: 'Tổng quan', path: '/tutor/dashboard' },
     { icon: CalendarDays, label: 'Lịch dạy', path: '/tutor/schedule' },
-    { icon: BookOpen, label: 'Booking', path: '/tutor/bookings' },
+    { icon: BookOpen, label: 'Lịch hẹn', path: '/tutor/bookings' },
     { icon: Users, label: 'Học sinh', path: '/tutor/students' },
     { icon: GraduationCap, label: 'Khóa học', path: '/tutor/courses' },
     { icon: Video, label: 'Lớp online', path: '/tutor/online-classes' },
+    { icon: BarChart3, label: 'Thống kê', path: '/tutor/analytics' },
     { icon: Star, label: 'Đánh giá', path: '/tutor/reviews' },
     { icon: LifeBuoy, label: 'Hỗ trợ', path: '/tutor/support' },
     { icon: Settings, label: 'Hồ sơ', path: '/tutor/settings' },
@@ -43,8 +45,8 @@ const TutorLayout: React.FC = () => {
     <div className="flex min-h-screen bg-[#fcfdff]">
       <aside className="fixed z-20 flex h-full w-64 flex-col border-r border-gray-100 bg-white">
         <div className="p-8">
-          <h1 className="text-xl font-bold leading-tight text-gray-900">Tutor Portal</h1>
-          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">Managing Academy</p>
+          <h1 className="text-xl font-bold leading-tight text-gray-900">Cổng Gia Sư</h1>
+          <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">Quản lý giảng dạy</p>
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-4">
@@ -72,10 +74,10 @@ const TutorLayout: React.FC = () => {
           <div className="text-xl font-bold text-[#5a5ce6]">TutorMatch</div>
           <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="text-sm font-bold text-gray-900">{user?.username || 'Tutor Account'}</div>
-              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Online tutor</div>
+              <div className="text-sm font-bold text-gray-900">{user?.username || 'Tài khoản gia sư'}</div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Gia sư trực tuyến</div>
             </div>
-            <img src={user?.avatar || 'https://i.pravatar.cc/150?u=tutor'} alt="avatar" className="h-10 w-10 rounded-xl border border-indigo-50 object-cover" />
+            <img src={user?.avatar_url || user?.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user?.username || 'tutor')}`} alt="avatar" className="h-10 w-10 rounded-xl border border-indigo-50 object-cover" />
             <button
               onClick={handleLogout}
               className="rounded-xl bg-rose-50 p-3 text-rose-600 transition-colors hover:bg-rose-100"

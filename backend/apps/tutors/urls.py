@@ -13,10 +13,12 @@ from .views import (
     TutorPublicCVView,
     TutorPublicReviewListView,
     TutorQuickSearchView,
+    TutorAnalyticsView,
 )
 
 urlpatterns = [
     path("dashboard/", TutorDashboardView.as_view(), name="tutor-dashboard"),
+    path("analytics/", TutorAnalyticsView.as_view(), name="tutor-analytics"),
     path("settings/", TutorSettingsView.as_view(), name="tutor-settings"),
     path(
         "guarantee/",

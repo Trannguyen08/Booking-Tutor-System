@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useTutorCourses, useTutorCourseDetail } from '../hooks/useCourses';
 import { coursesApi } from '../api/courses';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 import { createMaterialBatchContent, groupSessionMaterials } from '../utils/materialGroups';
 
 const sessionTitle = (session: any) => {
@@ -54,6 +55,7 @@ export const TutorCourseList: React.FC = () => {
   const { data, loading, fetchCourses } = useTutorCourses();
   const reviews: any[] = [];
   const [extensions, setExtensions] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
 
   const fetchSideData = async () => {
     const extensionData = await coursesApi.getTutorExtensionRequests().catch(() => []);
@@ -63,6 +65,7 @@ export const TutorCourseList: React.FC = () => {
   useEffect(() => { fetchCourses(); fetchSideData(); }, [fetchCourses]);
 
   const courses: any[] = data?.courses || [];
+  const pagedCourses = useClientPagination(courses, page, 10);
 
   return (
     <div className="space-y-8 p-6">
@@ -93,8 +96,9 @@ export const TutorCourseList: React.FC = () => {
           <p className="text-gray-500 font-semibold">Bạn chưa có khóa học nào.</p>
         </div>
       ) : (
+        <>
         <div className="grid md:grid-cols-2 gap-5">
-          {courses.map((course, i) => {
+          {pagedCourses.pagedItems.map((course, i) => {
             const progress = course.total_sessions > 0
               ? Math.round((course.completed_sessions / course.total_sessions) * 100)
               : 0;
@@ -113,10 +117,22 @@ export const TutorCourseList: React.FC = () => {
                     <h3 className="font-extrabold text-gray-900 text-lg group-hover:text-[#5a5ce6] transition-colors">{course.student_name || course.title}</h3>
                     <p className="text-sm text-[#5a5ce6] font-semibold">{course.subject_name}</p>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-                    course.status === 'active' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200'
+                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                    course.status === 'active'
+                      ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                      : course.status === 'paused'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : course.status === 'cancelled'
+                          ? 'bg-rose-50 text-rose-700 border-rose-200'
+                          : 'bg-indigo-50 text-indigo-700 border-indigo-200'
                   }`}>
-                    {course.status === 'active' ? 'Đang dạy' : 'Kết thúc'}
+                    {course.status === 'active'
+                      ? 'Đang dạy'
+                      : course.status === 'paused'
+                        ? 'Tạm dừng'
+                        : course.status === 'cancelled'
+                          ? 'Đã hủy'
+                          : 'Đã hoàn thành'}
                   </span>
                 </div>
 
@@ -150,6 +166,14 @@ export const TutorCourseList: React.FC = () => {
             );
           })}
         </div>
+        <Pagination
+          currentPage={pagedCourses.currentPage}
+          totalCount={pagedCourses.totalCount}
+          pageSize={pagedCourses.pageSize}
+          totalPages={pagedCourses.totalPages}
+          onPageChange={setPage}
+        />
+        </>
       )}
 
       <div className="max-w-3xl">

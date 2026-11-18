@@ -4,11 +4,10 @@ from rest_framework import status, permissions, generics
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import ExtractMonth
 from django.utils import timezone
 from apps.users.models import TutorProfile as UserTutorProfile
-from apps.ai_reviews.models import AIReview
 from apps.tutors.models import TutorProfile as TeachingProfile
 from apps.users.tasks import send_account_lock_email
 from apps.users.services.tutor_registration import (
@@ -16,7 +15,17 @@ from apps.users.services.tutor_registration import (
     reject_tutor_registration,
 )
 from apps.bookings.models import Booking
-from apps.courses.models import Course, CourseCancellationRequest, CourseCommission
+from apps.courses.models import (
+    Course,
+    CourseCancellationRequest,
+    CourseCommission,
+    CourseReview,
+)
+from apps.online_classes.models import (
+    OnlineClassEnrollment,
+    OnlineClassPayment,
+    OnlineClassReview,
+)
 from apps.tutors.models import TutorGuaranteeTransaction
 from apps.tutors.services.guarantee import (
     accrue_course_commission,
@@ -322,8 +331,39 @@ class AdminCourseCancellationRequestActionView(APIView):
                 booking.status = "cancelled"
                 booking.save(update_fields=["status"])
 
+        from apps.notifications.tasks import create_notification
+
+        stu_msg = (
+            f"Yêu cầu hủy khóa '{cancellation.course.title}' đã được Admin chấp thuận."
+            + (
+                f" Số tiền hoàn dự kiến: {int(cancellation.refund_amount):,}đ."
+                if action == "approve" and cancellation.refund_required
+                else ""
+            )
+            if action == "approve"
+            else f"Yêu cầu hủy khóa '{cancellation.course.title}' đã bị từ chối. {cancellation.admin_note}"
+        )
+        create_notification(
+            user_id=cancellation.course.student_id,
+            title="Cập nhật yêu cầu hủy khóa học",
+            message=stu_msg,
+            notification_type="info",
+            link=f"/my-courses/{cancellation.course_id}",
+        )
+        create_notification(
+            user_id=cancellation.course.tutor.user_id,
+            title="Cập nhật yêu cầu hủy khóa học",
+            message=f"Khóa học '{cancellation.course.title}' - trạng thái yêu cầu hủy: {'Đã duyệt hủy' if action == 'approve' else 'Từ chối'}.",
+            notification_type="info",
+            link=f"/tutor/courses/{cancellation.course_id}",
+        )
+
         invalidate_cache_groups("courses", "bookings")
-        return Response(AdminCourseCancellationRequestSerializer(cancellation).data)
+        return Response(
+            AdminCourseCancellationRequestSerializer(
+                cancellation, context={"request": request}
+            ).data
+        )
 
 
 class AdminFinanceOverviewView(APIView):
@@ -369,6 +409,15 @@ class AdminFinanceOverviewView(APIView):
             "tutor__user", "course"
         ).order_by("-created_at")[:100]
 
+        from core.pagination import paginate_items
+
+        tutors_page = paginate_items(
+            request,
+            tutors,
+            AdminFinanceTutorSerializer,
+            default_page_size=10,
+        )
+
         return Response(
             {
                 "selected": {"month": month, "year": year},
@@ -401,7 +450,10 @@ class AdminFinanceOverviewView(APIView):
                         new_class_locked=True
                     ).count(),
                 },
-                "tutors": AdminFinanceTutorSerializer(tutors, many=True).data,
+                "tutors": AdminFinanceTutorSerializer(tutors, many=True).data
+                if request.query_params.get("page") is None
+                else tutors_page["results"],
+                "tutors_pagination": tutors_page,
                 "recent_transactions": AdminGuaranteeTransactionSerializer(
                     recent_transactions, many=True
                 ).data,
@@ -409,7 +461,7 @@ class AdminFinanceOverviewView(APIView):
                     due_commissions, many=True
                 ).data,
                 "payout_requests": TutorPayoutRequestSerializer(
-                    payout_requests, many=True
+                    payout_requests, many=True, context={"request": request}
                 ).data,
             }
         )
@@ -470,7 +522,22 @@ class AdminTutorPayoutRequestActionView(APIView):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response(TutorPayoutRequestSerializer(payout).data)
+        from apps.notifications.tasks import create_notification
+
+        status_text = {
+            "approved": "đã được duyệt, Admin đang chuẩn bị chuyển khoản",
+            "paid": "đã được chuyển khoản hoàn tất",
+            "rejected": "đã bị từ chối",
+        }.get(payout.status, payout.status)
+        create_notification(
+            user_id=payout.tutor.user_id,
+            title="Cập nhật yêu cầu rút tiền / hoàn cọc",
+            message=f"Yêu cầu {int(payout.amount):,}đ {status_text}."
+            + (f" Ghi chú: {payout.admin_note}" if payout.admin_note else ""),
+            notification_type="info",
+            link="/tutor/dashboard",
+        )
+        return Response(TutorPayoutRequestSerializer(payout, context={"request": request}).data)
 
 
 
@@ -483,14 +550,7 @@ class AdminTutorListView(generics.ListAPIView):
         queryset = (
             UserTutorProfile.objects.all()
             .select_related("user")
-            .prefetch_related(
-                "achievements",
-                Prefetch(
-                    "ai_reviews",
-                    queryset=AIReview.objects.order_by("-created_at"),
-                    to_attr="prefetched_ai_reviews",
-                ),
-            )
+            .prefetch_related("achievements")
         )
 
         status_param = self.request.query_params.get("status")
@@ -523,9 +583,25 @@ class AdminTutorActionView(APIView):
                 profile.user.save()
                 # Send email notification
                 send_account_lock_email.delay(profile.user.email, reason)
+            elif action == "remove":
+                profile.user.is_active = False
+                profile.user.save()
+                teaching = getattr(profile.user, "teaching_profile", None)
+                if teaching:
+                    teaching.new_class_locked = True
+                    teaching.new_class_lock_reason = reason
+                    teaching.save(update_fields=["new_class_locked", "new_class_lock_reason"])
+                invalidate_cache_groups("tutors")
+                send_account_lock_email.delay(profile.user.email, reason)
             elif action == "unlock":
                 profile.user.is_active = True
                 profile.user.save()
+                teaching = getattr(profile.user, "teaching_profile", None)
+                if teaching and teaching.new_class_locked:
+                    teaching.new_class_locked = False
+                    teaching.new_class_lock_reason = ""
+                    teaching.save(update_fields=["new_class_locked", "new_class_lock_reason"])
+                invalidate_cache_groups("tutors")
             else:
                 return Response(
                     {"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST
@@ -564,6 +640,182 @@ class AdminUserListView(generics.ListAPIView):
         return queryset
 
 
+class AdminUserDetailView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request, pk):
+        try:
+            user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "Không tìm thấy người dùng."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        def _abs_url(file_field):
+            if not file_field:
+                return ""
+            url = file_field.url
+            return request.build_absolute_uri(url) if url.startswith("/") else url
+
+        full_name = f"{user.last_name} {user.first_name}".strip() or user.username
+
+        # Paid 1-1 bookings & courses
+        paid_bookings = Booking.objects.filter(student=user, payment_status="paid")
+        total_paid_1on1_deposit = money_sum(paid_bookings, "deposit_amount")
+        total_paid_1on1_value = money_sum(paid_bookings, "total_price")
+
+        courses_qs = (
+            Course.objects.filter(student=user)
+            .select_related("tutor__user", "subject")
+            .annotate(
+                completed_sessions_num=Count(
+                    "sessions", filter=Q(sessions__student_completed=True)
+                )
+            )
+            .order_by("-created_at")
+        )
+        courses_data = []
+        for c in courses_qs:
+            tutor_name = ""
+            if c.tutor:
+                reg = getattr(c.tutor.user, "tutor_profile", None)
+                tutor_name = (
+                    c.tutor.full_name
+                    or (reg.full_name if reg else "")
+                    or c.tutor.user.username
+                )
+            courses_data.append(
+                {
+                    "id": c.id,
+                    "title": c.title,
+                    "subject_name": c.subject.name if c.subject else "",
+                    "tutor_name": tutor_name,
+                    "status": c.status,
+                    "completed_sessions": c.completed_sessions_num,
+                    "total_sessions": c.total_sessions,
+                    "hourly_rate": float(c.hourly_rate or 0),
+                    "start_date": c.start_date,
+                    "end_date": c.end_date,
+                    "schedule_time": c.schedule_time,
+                    "created_at": c.created_at,
+                }
+            )
+
+        # Online class enrollments & paid amounts
+        enrollments_qs = (
+            OnlineClassEnrollment.objects.filter(student=user)
+            .select_related("online_class__tutor__user", "online_class__subject")
+            .order_by("-created_at")
+        )
+        online_paid_total = money_sum(
+            OnlineClassPayment.objects.filter(enrollment__student=user, status="paid"),
+            "amount",
+        )
+        enrollments_data = []
+        for enr in enrollments_qs:
+            oc = enr.online_class
+            tutor_name = ""
+            if oc and oc.tutor:
+                tutor_name = oc.tutor.full_name or oc.tutor.user.username
+            enrollments_data.append(
+                {
+                    "id": enr.id,
+                    "online_class_id": oc.id if oc else None,
+                    "class_title": oc.title if oc else "",
+                    "subject_name": oc.subject.name if (oc and oc.subject) else "",
+                    "tutor_name": tutor_name,
+                    "billing_cycle": enr.billing_cycle,
+                    "total_paid_amount": float(enr.total_paid_amount or 0),
+                    "sessions_attended": enr.sessions_attended,
+                    "sessions_paid_total": enr.sessions_paid_total,
+                    "status": enr.status,
+                    "enrolled_at": enr.joined_at or enr.created_at,
+                }
+            )
+
+        # Reviews written by student (1-1 + online class)
+        reviews_data = []
+        for rev in (
+            CourseReview.objects.filter(course__student=user)
+            .select_related("course", "tutor__user")
+            .order_by("-created_at")
+        ):
+            tutor_name = rev.tutor.full_name if rev.tutor else ""
+            reviews_data.append(
+                {
+                    "uid": f"course-{rev.id}",
+                    "source": "Khóa học 1-1",
+                    "title": rev.course.title if rev.course else "",
+                    "tutor_name": tutor_name,
+                    "rating": rev.rating,
+                    "comment": rev.comment,
+                    "created_at": rev.created_at,
+                }
+            )
+        for orev in (
+            OnlineClassReview.objects.filter(student=user)
+            .select_related("online_class__tutor__user")
+            .order_by("-created_at")
+        ):
+            tutor_name = (
+                (orev.online_class.tutor.full_name or orev.online_class.tutor.user.username)
+                if (orev.online_class and orev.online_class.tutor)
+                else ""
+            )
+            reviews_data.append(
+                {
+                    "uid": f"online-{orev.id}",
+                    "source": "Lớp nhóm online",
+                    "title": orev.online_class.title if orev.online_class else "",
+                    "tutor_name": tutor_name,
+                    "rating": orev.rating,
+                    "comment": orev.comment,
+                    "created_at": orev.created_at,
+                }
+            )
+        reviews_data.sort(key=lambda r: r["created_at"], reverse=True)
+
+        return Response(
+            {
+                "profile": {
+                    "id": user.id,
+                    "username": user.username,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "full_name": full_name,
+                    "email": user.email,
+                    "phone": user.phone,
+                    "bio": user.bio,
+                    "avatar_url": _abs_url(user.avatar),
+                    "is_verified": user.is_verified,
+                    "is_active": user.is_active,
+                    "is_tutor": user.is_tutor,
+                    "created_at": user.created_at,
+                },
+                "bank_info": {
+                    "bank_name": user.bank_name,
+                    "bank_account_number": user.bank_account_number,
+                    "bank_account_holder": user.bank_account_holder,
+                    "bank_branch": user.bank_branch,
+                    "bank_qr_url": _abs_url(user.bank_qr_image),
+                },
+                "summary": {
+                    "total_paid_1on1_deposit": float(total_paid_1on1_deposit),
+                    "total_paid_1on1_value": float(total_paid_1on1_value),
+                    "total_paid_online": float(online_paid_total),
+                    "total_paid_overall": float(total_paid_1on1_deposit + online_paid_total),
+                    "courses_count": len(courses_data),
+                    "online_classes_count": len(enrollments_data),
+                    "reviews_count": len(reviews_data),
+                },
+                "courses": courses_data,
+                "online_classes": enrollments_data,
+                "reviews": reviews_data,
+            }
+        )
+
+
 class AdminUserActionView(APIView):
     permission_classes = [IsAdminUser]
 
@@ -589,3 +841,18 @@ class AdminUserActionView(APIView):
             return Response(
                 {"error": "User not found"}, status=status.HTTP_404_NOT_FOUND
             )
+
+
+class AdminTutorRankingsView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        from apps.tutors.analytics import build_tutor_revenue_rankings
+
+        payload = build_tutor_revenue_rankings(
+            mode=request.query_params.get("mode", "month"),
+            year=request.query_params.get("year"),
+            month=request.query_params.get("month"),
+            quarter=request.query_params.get("quarter"),
+        )
+        return Response(payload)

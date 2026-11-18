@@ -28,7 +28,9 @@ from .views import (
     AdminTutorPayoutRequestActionView,
     AdminTutorListView,
     AdminTutorActionView,
+    AdminTutorRankingsView,
     AdminUserListView,
+    AdminUserDetailView,
     AdminUserActionView,
 )
 
@@ -90,12 +92,14 @@ urlpatterns = [
     ),
     path("notifications/", AdminNotificationOverviewView.as_view(), name="admin-notifications"),
     path("tutors/", AdminTutorListView.as_view(), name="admin-tutors-list"),
+    path("tutor-rankings/", AdminTutorRankingsView.as_view(), name="admin-tutor-rankings"),
     path(
         "tutors/<int:pk>/action/",
         AdminTutorActionView.as_view(),
         name="admin-tutor-action",
     ),
     path("users/", AdminUserListView.as_view(), name="admin-users-list"),
+    path("users/<int:pk>/", AdminUserDetailView.as_view(), name="admin-user-detail"),
     path(
         "users/<int:pk>/action/",
         AdminUserActionView.as_view(),

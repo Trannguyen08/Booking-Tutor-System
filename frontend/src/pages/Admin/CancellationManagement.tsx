@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, Search, XCircle } from 'lucide-react';
 import { adminApi } from '../../api/admin';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 
 const toArray = (value: any) => Array.isArray(value) ? value : value?.results || [];
 const money = (value: any) => Number(value || 0).toLocaleString('vi-VN');
@@ -9,6 +10,7 @@ const CancellationManagement: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [status, setStatus] = useState('pending');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState<Record<number, string>>({});
 
@@ -16,12 +18,14 @@ const CancellationManagement: React.FC = () => {
     setLoading(true);
     try {
       setItems(toArray(await adminApi.getCourseCancellations({ status, search: search || undefined })));
+      setPage(1);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => { load(); }, [status]);
+  const pagedItems = useClientPagination(items, page, 10);
 
   const act = async (id: number, action: string) => {
     await adminApi.courseCancellationAction(id, action, { admin_note: notes[id] || '' });
@@ -55,14 +59,14 @@ const CancellationManagement: React.FC = () => {
         <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-12 text-center text-slate-400">Không có yêu cầu hủy.</div>
       ) : (
         <div className="space-y-4">
-          {items.map(item => (
+          {pagedItems.pagedItems.map(item => (
             <div key={item.id} className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="space-y-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="font-black text-slate-900">{item.course_title}</h2>
                     <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-600">{item.subject_name}</span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${item.status === 'pending' ? 'bg-amber-50 text-amber-700' : item.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{item.status}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${item.status === 'pending' ? 'bg-amber-50 text-amber-700' : item.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>{item.status === 'pending' ? 'Chờ duyệt' : item.status === 'approved' ? 'Đã duyệt' : 'Từ chối'}</span>
                   </div>
                   <p className="text-sm text-slate-600">Học viên: <b>{item.student_name}</b> ({item.student_email})</p>
                   <p className="text-sm text-slate-600">Gia sư: <b>{item.tutor_name}</b> ({item.tutor_email})</p>
@@ -70,7 +74,7 @@ const CancellationManagement: React.FC = () => {
                   <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{item.reason}</p>
                 </div>
                 <div className="w-full rounded-xl bg-slate-50 p-4 text-sm lg:w-80">
-                  <p className="font-black text-slate-900">Refund: {item.refund_required ? `${item.refund_percent}% - ${money(item.refund_amount)}đ` : 'Không'}</p>
+                  <p className="font-black text-slate-900">Hoàn tiền: {item.refund_required ? `${item.refund_percent}% - ${money(item.refund_amount)}đ` : 'Không'}</p>
                   <p className="mt-1 text-xs text-slate-500">{item.refund_note}</p>
                   {item.refund_required && (
                     <div className="mt-3 space-y-1 text-slate-600">
@@ -91,6 +95,13 @@ const CancellationManagement: React.FC = () => {
               )}
             </div>
           ))}
+          <Pagination
+            currentPage={pagedItems.currentPage}
+            totalCount={pagedItems.totalCount}
+            pageSize={pagedItems.pageSize}
+            totalPages={pagedItems.totalPages}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>

@@ -6,7 +6,6 @@ import secrets
 import string
 
 from apps.tutors.models import Subject, TutorProfile as TeachingProfile, TutorSubject
-from apps.ai_reviews.review_runner import create_pending_review_for_tutor
 
 from ..models import TutorAchievement, TutorProfile
 from ..tasks import (
@@ -143,12 +142,6 @@ def register_tutor(data, files):
         )
         for file in achievement_files:
             TutorAchievement.objects.create(tutor=profile, image=file)
-
-        transaction.on_commit(
-            lambda profile_id=profile.id: create_pending_review_for_tutor(
-                TutorProfile.objects.get(id=profile_id)
-            )
-        )
 
     send_tutor_registration_pending_email.delay(user.email, profile.full_name)
     return profile

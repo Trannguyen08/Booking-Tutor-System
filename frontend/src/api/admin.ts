@@ -37,17 +37,21 @@ export const adminApi = {
 
   // Reports / settings / notifications
   getReports: (params?: any) => client.get('/admin/reports/', { params }).then(res => res.data),
+  downloadReportCsv: (params?: any) =>
+    client.get('/admin/reports/', { params: { ...params, export: 'csv' }, responseType: 'blob' }).then(res => res.data),
   getSettings: () => client.get('/admin/settings/').then(res => res.data),
   updateSetting: (key: string, value: string) => client.post(`/admin/settings/${key}/`, { value }).then(res => res.data),
   getNotifications: () => client.get('/admin/notifications/').then(res => res.data),
 
   // Tutors
   getTutors: (params?: any) => client.get('/admin/tutors/', { params }).then(res => res.data),
+  getTutorRankings: (params?: any) => client.get('/admin/tutor-rankings/', { params }).then(res => res.data),
   tutorAction: (id: number, action: string, data?: any) => client.post(`/admin/tutors/${id}/action/`, { action, ...data }).then(res => res.data),
   deductTutorCommission: (teachingProfileId: number, data?: any) =>
     client.post(`/tutors/admin/${teachingProfileId}/commission/deduct/`, data || {}).then(res => res.data),
 
   // Users
   getUsers: (params?: any) => client.get('/admin/users/', { params }).then(res => res.data),
+  getUserDetail: (id: number) => client.get(`/admin/users/${id}/`).then(res => res.data),
   userAction: (id: number, action: string) => client.post(`/admin/users/${id}/action/`, { action }).then(res => res.data),
 };

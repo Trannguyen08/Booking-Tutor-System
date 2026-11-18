@@ -134,6 +134,7 @@ class TutorPayoutRequest(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     bank_info = models.TextField(blank=True)
     qr_code_url = models.URLField(max_length=1000, blank=True)
+    qr_image = models.ImageField(upload_to="payout_qr/", null=True, blank=True)
     note = models.TextField(blank=True)
     admin_note = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")

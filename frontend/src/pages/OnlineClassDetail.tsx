@@ -8,6 +8,10 @@ import {
   CheckCircle2,
   CreditCard,
   ExternalLink,
+  FileText,
+  Image as ImageIcon,
+  Link2,
+  MessageSquare,
   Star,
   UserRound,
   Video,
@@ -19,6 +23,20 @@ import { getAccessToken } from '../utils/auth';
 const BILLING_LABELS: Record<string, string> = {
   per_session: 'Theo buổi',
   full_course: 'Toàn khóa',
+};
+
+const REFUND_LABELS: Record<string, string> = {
+  none: 'Không hoàn tiền',
+  pending: 'Chờ hoàn tiền',
+  refunded: 'Đã hoàn tiền',
+  rejected: 'Từ chối hoàn',
+};
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  pending: 'Chờ thanh toán',
+  paid: 'Đã thanh toán',
+  failed: 'Thất bại',
+  cancelled: 'Đã hủy',
 };
 
 const money = (value: string | number | undefined) =>
@@ -208,6 +226,12 @@ const OnlineClassDetail: React.FC = () => {
                 <div className="rounded-xl bg-gray-50 p-3">
                   <p className="text-[11px] font-bold uppercase text-gray-400">Lịch học</p>
                   <p className="mt-0.5 text-sm font-bold text-gray-800">{cls.schedule_text}</p>
+                  {(cls.start_date || cls.end_date) && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      Thời gian: {cls.start_date ? new Date(cls.start_date).toLocaleDateString('vi-VN') : '---'}
+                      {cls.end_date ? ` → ${new Date(cls.end_date).toLocaleDateString('vi-VN')}` : ''}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-xl bg-gray-50 p-3">
                   <p className="text-[11px] font-bold uppercase text-gray-400">Thời lượng & Gia hạn</p>
@@ -221,31 +245,81 @@ const OnlineClassDetail: React.FC = () => {
             <section className="rounded-2xl border border-indigo-50 bg-white p-6 shadow-sm">
               <h2 className="mb-3 flex items-center gap-2 text-base font-extrabold text-[#1e1b4b]">
                 <CalendarDays className="h-4 w-4 text-[#5a5ce6]" />
-                Lịch các buổi học ({cls.sessions?.length || 0})
+                Lịch các buổi học & Tài liệu ({cls.sessions?.length || 0})
               </h2>
               {cls.sessions?.length ? (
                 <div className="divide-y divide-gray-100">
                   {cls.sessions.map((s: any) => (
-                    <div key={s.id} className="py-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold text-gray-900">
-                          Buổi {s.session_number}: {s.title}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(s.scheduled_at).toLocaleString('vi-VN')} · {s.duration_minutes} phút
-                        </p>
+                    <div key={s.id} className="py-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-bold text-gray-900">
+                            {/^Buổi\s+\d+\s*[:.\-–]/i.test(s.title || '') ? s.title : `Buổi ${s.session_number}: ${s.title}`}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {new Date(s.scheduled_at).toLocaleDateString('vi-VN')} · {s.duration_minutes} phút
+                          </p>
+                        </div>
+                        <span
+                          className={`rounded-full px-2.5 py-0.5 text-xs font-bold shrink-0 ${
+                            s.status === 'completed'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : s.status === 'cancelled'
+                                ? 'bg-rose-50 text-rose-600'
+                                : 'bg-blue-50 text-blue-700'
+                          }`}
+                        >
+                          {s.status === 'completed' ? 'Đã dạy' : s.status === 'cancelled' ? 'Đã hủy' : 'Sắp tới'}
+                        </span>
                       </div>
-                      <span
-                        className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                          s.status === 'completed'
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : s.status === 'cancelled'
-                              ? 'bg-rose-50 text-rose-600'
-                              : 'bg-blue-50 text-blue-700'
-                        }`}
-                      >
-                        {s.status === 'completed' ? 'Đã dạy' : s.status === 'cancelled' ? 'Đã hủy' : 'Sắp tới'}
-                      </span>
+
+                      {s.notes && (
+                        <div className="rounded-xl bg-indigo-50/50 border border-indigo-100 p-3 text-xs text-slate-700">
+                          <p className="font-bold text-[#5a5ce6] flex items-center gap-1.5 mb-1">
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            Lời nhắn từ gia sư:
+                          </p>
+                          <p className="whitespace-pre-wrap">{s.notes}</p>
+                        </div>
+                      )}
+
+                      {s.materials?.length > 0 && (
+                        <div className="space-y-1.5">
+                          {s.materials.map((m: any) => {
+                            const href = m.file_url || m.external_url;
+                            return (
+                              <div
+                                key={m.id}
+                                className="flex items-start justify-between gap-3 rounded-xl bg-gray-50 px-3 py-2 text-xs"
+                              >
+                                <div className="min-w-0">
+                                  <p className="font-bold text-gray-800 flex items-center gap-1.5">
+                                    {m.material_type === 'link' ? (
+                                      <Link2 className="h-3.5 w-3.5 text-[#5a5ce6] shrink-0" />
+                                    ) : m.material_type === 'image' ? (
+                                      <ImageIcon className="h-3.5 w-3.5 text-[#5a5ce6] shrink-0" />
+                                    ) : (
+                                      <FileText className="h-3.5 w-3.5 text-[#5a5ce6] shrink-0" />
+                                    )}
+                                    <span className="truncate">{m.title}</span>
+                                  </p>
+                                  {m.content && <p className="mt-1 text-gray-600 whitespace-pre-wrap">{m.content}</p>}
+                                </div>
+                                {href && (
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="shrink-0 font-bold text-[#5a5ce6] hover:underline"
+                                  >
+                                    Mở / Tải →
+                                  </a>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -429,8 +503,29 @@ const OnlineClassDetail: React.FC = () => {
                     )}
                     <div className="border-t border-rose-200 pt-2 font-bold">
                       {Number(enrollment.refund_amount) > 0
-                        ? `Hoàn tiền (${enrollment.refund_sessions_remaining} buổi chưa học): ${money(enrollment.refund_amount)}đ · Trạng thái: ${enrollment.refund_status}`
+                        ? `Hoàn tiền (${enrollment.refund_sessions_remaining} buổi chưa học): ${money(enrollment.refund_amount)}đ · Trạng thái: ${REFUND_LABELS[enrollment.refund_status] || enrollment.refund_status}`
                         : 'Không hoàn tiền (quá hạn học phí hoặc không còn buổi chưa học).'}
+                    </div>
+                  </div>
+                )}
+
+                {enrollment.payments?.length > 0 && (
+                  <div className="border-t border-gray-100 pt-3 space-y-2">
+                    <p className="text-xs font-extrabold uppercase text-gray-400">Lịch sử đóng học phí</p>
+                    <div className="space-y-1.5">
+                      {enrollment.payments.map((p: any) => (
+                        <div key={p.id} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-xs">
+                          <div>
+                            <p className="font-bold text-gray-800">
+                              {BILLING_LABELS[p.billing_cycle] || p.billing_cycle} ({p.sessions_covered} buổi)
+                            </p>
+                            <p className="text-[11px] text-gray-400">
+                              {p.paid_at ? `Ngày đóng: ${new Date(p.paid_at).toLocaleString('vi-VN')}` : PAYMENT_STATUS_LABELS[p.status] || p.status}
+                            </p>
+                          </div>
+                          <span className="font-extrabold text-emerald-700">{money(p.amount)}đ</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}

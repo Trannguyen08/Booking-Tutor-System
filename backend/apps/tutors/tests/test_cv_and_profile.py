@@ -38,7 +38,6 @@ def _fake_pdf(name: str = "cv_sample.pdf") -> SimpleUploadedFile:
 class TutorCVAndPublicPrivacyTests(APITransactionTestCase):
     def test_register_tutor_with_cv_and_public_detail_exposes_cv_not_cccd(self):
         with (
-            patch("apps.users.services.tutor_registration.create_pending_review_for_tutor"),
             patch("apps.users.services.tutor_registration.send_tutor_registration_pending_email.delay"),
             patch("apps.users.services.tutor_registration.send_tutor_registration_result_email.delay"),
         ):

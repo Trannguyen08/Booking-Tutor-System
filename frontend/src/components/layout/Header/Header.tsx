@@ -175,8 +175,8 @@ const Header: React.FC = () => {
                   className="flex items-center gap-3 p-1 pr-3 rounded-2xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100"
                 >
                   <div className="w-9 h-9 rounded-xl bg-[#5a5ce6]/10 text-[#5a5ce6] flex items-center justify-center font-bold overflow-hidden border border-indigo-50 shadow-sm">
-                    {user.avatar ? (
-                      <img src={user.avatar} alt="avatar" className="w-full h-full object-cover" />
+                    {user.avatar_url || user.avatar ? (
+                      <img src={user.avatar_url || user.avatar} alt="avatar" className="w-full h-full object-cover" />
                     ) : (
                       user.username?.[0].toUpperCase()
                     )}

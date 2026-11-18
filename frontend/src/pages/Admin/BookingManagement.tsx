@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { adminApi } from '../../api/admin';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 
 const toArray = (data: any) => {
@@ -47,7 +48,7 @@ const Badge = ({ value, tone = 'slate' }: { value: string; tone?: string }) => {
     amber: 'border-amber-200 bg-amber-50 text-amber-700',
     rose: 'border-rose-200 bg-rose-50 text-rose-700',
   };
-  return <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
+  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
 };
 
 const Toolbar = ({ children }: { children: React.ReactNode }) => (
@@ -70,6 +71,22 @@ const Select = (props: any) => (
   <select {...props} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none" />
 );
 
+const bookingStatusLabels: Record<string, string> = {
+  pending: 'Chờ duyệt',
+  approved: 'Đã duyệt',
+  confirmed: 'Đã xác nhận',
+  cancelled: 'Đã hủy',
+  completed: 'Hoàn thành',
+};
+
+const paymentStatusLabels: Record<string, string> = {
+  unpaid: 'Chưa trả',
+  pending: 'Đang chờ PayOS',
+  paid: 'Đã thanh toán',
+  failed: 'Thanh toán lỗi',
+  cancelled: 'Đã hủy',
+};
+
 export const BookingManagement: React.FC = () => {
   const now = new Date();
   const [items, setItems] = useState<any[]>([]);
@@ -78,6 +95,7 @@ export const BookingManagement: React.FC = () => {
   const [status, setStatus] = useState('all');
   const [paymentStatus, setPaymentStatus] = useState('all');
   const [year, setYear] = useState(String(now.getFullYear()));
+  const [page, setPage] = useState(1);
   const { showToast } = useToast();
 
   const params = useMemo(() => ({ search: search || undefined, status, payment_status: paymentStatus, year }), [paymentStatus, search, status, year]);
@@ -85,7 +103,9 @@ export const BookingManagement: React.FC = () => {
     setLoading(true);
     try { setItems(toArray(await adminApi.getBookings(params))); } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, [params]);
+  useEffect(() => { setPage(1); load(); }, [params]);
+
+  const pagedBookings = useClientPagination(items, page, 10);
 
   const action = async (id: number, actionName: string) => {
     try {
@@ -117,14 +137,14 @@ export const BookingManagement: React.FC = () => {
               {['Booking', 'Gia sư', 'Học viên', 'Thời gian', 'Thanh toán', 'Trạng thái', 'Thao tác'].map(h => <th key={h} className="px-5 py-4 text-xs font-black uppercase text-slate-500">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? <tr><td colSpan={7} className="py-12 text-center font-semibold text-slate-400">Đang tải booking...</td></tr> : items.map(item => (
+              {loading ? <tr><td colSpan={7} className="py-12 text-center font-semibold text-slate-400">Đang tải booking...</td></tr> : pagedBookings.pagedItems.map(item => (
                 <tr key={item.id} className="hover:bg-slate-50">
                   <td className="px-5 py-4"><p className="font-black text-slate-900">#{item.id} · {item.subject_name || 'Môn học'}</p><p className="mt-1 text-xs text-slate-500">{formatDate(item.created_at)}</p></td>
                   <td className="px-5 py-4"><p className="font-bold text-slate-800">{item.tutor_name}</p><p className="text-xs text-slate-500">{item.tutor_email}</p></td>
                   <td className="px-5 py-4"><p className="font-bold text-slate-800">{item.student_name}</p><p className="text-xs text-slate-500">{item.student_email}</p></td>
                   <td className="px-5 py-4 text-sm font-semibold text-slate-600">{new Date(item.start_time).toLocaleString('vi-VN')}</td>
                   <td className="px-5 py-4"><p className="font-black text-slate-900">{formatCurrency(Number(item.total_price || 0))}</p><p className="text-xs text-slate-500">Cọc {formatCurrency(Number(item.deposit_amount || 0))}</p></td>
-                  <td className="px-5 py-4 space-y-2"><Badge value={item.status} tone={item.status === 'cancelled' ? 'rose' : 'blue'} /><br /><Badge value={item.payment_status} tone={item.payment_status === 'paid' ? 'green' : item.payment_status === 'failed' ? 'rose' : 'amber'} /></td>
+                  <td className="px-5 py-4 space-y-2"><Badge value={bookingStatusLabels[item.status] || item.status} tone={item.status === 'cancelled' ? 'rose' : item.status === 'completed' ? 'green' : 'blue'} /><br /><Badge value={paymentStatusLabels[item.payment_status] || item.payment_status} tone={item.payment_status === 'paid' ? 'green' : item.payment_status === 'failed' ? 'rose' : 'amber'} /></td>
                   <td className="px-5 py-4"><div className="flex gap-1">
                     <button title="Xác nhận" onClick={() => action(item.id, 'confirmed')} className="rounded-lg p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600"><CheckCircle2 className="h-4 w-4" /></button>
                     <button title="Đã thanh toán" onClick={() => action(item.id, 'paid')} className="rounded-lg p-2 text-slate-400 hover:bg-blue-50 hover:text-blue-600"><CreditCard className="h-4 w-4" /></button>
@@ -135,6 +155,15 @@ export const BookingManagement: React.FC = () => {
               {!loading && items.length === 0 && <tr><td colSpan={7} className="py-12 text-center font-semibold text-slate-400">Không có booking phù hợp.</td></tr>}
             </tbody>
           </table>
+        </div>
+        <div className="px-5 pb-4">
+          <Pagination
+            currentPage={pagedBookings.currentPage}
+            totalCount={pagedBookings.totalCount}
+            pageSize={pagedBookings.pageSize}
+            totalPages={pagedBookings.totalPages}
+            onPageChange={setPage}
+          />
         </div>
       </section>
     </div>

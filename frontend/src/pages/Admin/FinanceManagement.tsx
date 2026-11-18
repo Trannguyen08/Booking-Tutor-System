@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Banknote, CircleDollarSign, CreditCard, Lock, Search, WalletCards } from 'lucide-react';
+import { Banknote, CircleDollarSign, CreditCard, Lock, QrCode, Search, WalletCards } from 'lucide-react';
 import { useAdminStore } from '../../store/useAdminStore';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 import { adminApi } from '../../api/admin';
 
@@ -15,6 +16,13 @@ const transactionLabels: Record<string, string> = {
   deposit_deduction: 'Trừ cọc',
   deposit_refund: 'Hoàn cọc',
   deposit_release: 'Trả cọc còn lại',
+};
+
+const payoutStatusLabels: Record<string, string> = {
+  pending: 'Chờ duyệt',
+  approved: 'Đã duyệt',
+  rejected: 'Từ chối',
+  paid: 'Đã chuyển',
 };
 
 const normalizeText = (value: string) =>
@@ -41,6 +49,9 @@ const AdminFinanceManagement: React.FC = () => {
   const [actionType, setActionType] = useState('top_up_deposit');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  const [tutorsPage, setTutorsPage] = useState(1);
+  const [payoutsPage, setPayoutsPage] = useState(1);
+  const [txPage, setTxPage] = useState(1);
   const { finance, fetchFinance, financeTutorAction, isLoading } = useAdminStore();
   const { showToast } = useToast();
 
@@ -56,6 +67,14 @@ const AdminFinanceManagement: React.FC = () => {
     if (!keyword) return tutors;
     return tutors.filter((tutor: any) => normalizeText([tutor.full_name, tutor.email].filter(Boolean).join(' ')).includes(keyword));
   }, [searchTerm, tutors]);
+
+  useEffect(() => {
+    setTutorsPage(1);
+  }, [searchTerm]);
+
+  const pagedTutors = useClientPagination(filteredTutors, tutorsPage, 10);
+  const pagedPayouts = useClientPagination(finance?.payout_requests || [], payoutsPage, 10);
+  const pagedTransactions = useClientPagination(finance?.recent_transactions || [], txPage, 10);
 
   const submitAction = async () => {
     if (!selectedTutor) return;
@@ -130,49 +149,49 @@ const AdminFinanceManagement: React.FC = () => {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-left">
+            <table className="w-full min-w-[880px] text-left">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
                   <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Gia sư</th>
-                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Cọc</th>
-                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Nợ commission</th>
-                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Khóa học</th>
-                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Trạng thái</th>
-                  <th className="px-5 py-4 text-right text-xs font-black uppercase text-slate-500">Thao tác</th>
+                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Cọc</th>
+                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Nợ commission</th>
+                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Khóa học</th>
+                  <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Trạng thái</th>
+                  <th className="px-5 py-4 text-right text-xs font-black uppercase text-slate-500 whitespace-nowrap">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr><td colSpan={6} className="py-12 text-center font-semibold text-slate-400">Đang tải tài chính...</td></tr>
-                ) : filteredTutors.length === 0 ? (
+                ) : pagedTutors.pagedItems.length === 0 ? (
                   <tr><td colSpan={6} className="py-12 text-center font-semibold text-slate-400">Không có gia sư phù hợp.</td></tr>
-                ) : filteredTutors.map((tutor: any) => (
+                ) : pagedTutors.pagedItems.map((tutor: any) => (
                   <tr key={tutor.id} className="hover:bg-slate-50">
                     <td className="px-5 py-4">
                       <p className="font-black text-slate-900">{tutor.full_name || 'Gia sư'}</p>
                       <p className="mt-1 text-xs text-slate-500">{tutor.email || '---'}</p>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-4 whitespace-nowrap">
                       <p className="font-black text-slate-900">{formatCurrency(Number(tutor.guarantee_deposit_balance || 0))}</p>
                       <p className="mt-1 text-xs text-slate-500">Yêu cầu {formatCurrency(Number(tutor.required_deposit || 0))}</p>
                     </td>
-                    <td className="px-5 py-4 font-black text-rose-600">{formatCurrency(Number(tutor.commission_debt || 0))}</td>
-                    <td className="px-5 py-4">
+                    <td className="px-5 py-4 font-black text-rose-600 whitespace-nowrap">{formatCurrency(Number(tutor.commission_debt || 0))}</td>
+                    <td className="px-5 py-4 whitespace-nowrap">
                       <p className="font-bold text-slate-700">{tutor.active_courses || 0} đang học</p>
                       <p className="mt-1 text-xs text-slate-500">{tutor.due_commissions || 0} khoản commission</p>
                     </td>
-                    <td className="px-5 py-4">
-                      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tutor.new_class_locked ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                    <td className="px-5 py-4 whitespace-nowrap">
+                      <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black ${tutor.new_class_locked ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
                         {tutor.new_class_locked ? 'Khóa nhận lớp' : 'Đủ điều kiện'}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-right">
+                    <td className="px-5 py-4 text-right whitespace-nowrap">
                       <button
                         onClick={() => {
                           setSelectedTutor(tutor);
                           setActionType(Number(tutor.commission_debt || 0) > 0 ? 'deduct_commission' : 'top_up_deposit');
                         }}
-                        className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
+                        className="inline-flex items-center gap-2 whitespace-nowrap rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800"
                       >
                         <CreditCard className="h-4 w-4" />
                         Xử lý
@@ -183,51 +202,88 @@ const AdminFinanceManagement: React.FC = () => {
               </tbody>
             </table>
           </div>
+          <div className="p-4 pt-0">
+            <Pagination
+              currentPage={pagedTutors.currentPage}
+              totalCount={pagedTutors.totalCount}
+              pageSize={pagedTutors.pageSize}
+              totalPages={pagedTutors.totalPages}
+              onPageChange={setTutorsPage}
+            />
+          </div>
         </section>
 
         <section className="space-y-6">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-base font-black text-slate-900">Yêu cầu chuyển tiền</h2>
             <div className="mt-4 space-y-3">
-              {(finance?.payout_requests || []).slice(0, 8).map((item: any) => (
-                <div key={item.id} className="rounded-xl bg-slate-50 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-black text-slate-900">{item.tutor_name || 'Gia sư'}</p>
-                      <p className="mt-1 text-xs font-semibold text-slate-500">
-                        {item.request_type === 'platform_exit' ? 'Rút khỏi nền tảng' : 'Nhận phần cọc còn lại'}
-                      </p>
-                      <p className="mt-1 truncate text-xs font-semibold text-slate-400">{item.course_title || item.bank_info || 'Không có khóa học'}</p>
+              {pagedPayouts.pagedItems.map((item: any) => {
+                const bankLabel = item.tutor_bank_info || item.bank_info;
+                const qrHref = item.qr_image_url || item.qr_code_url;
+                return (
+                  <div key={item.id} className="rounded-xl bg-slate-50 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-900">{item.tutor_name || 'Gia sư'}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          {item.request_type === 'platform_exit' ? 'Rút khỏi nền tảng' : 'Nhận phần cọc còn lại'}
+                        </p>
+                        {item.course_title && (
+                          <p className="mt-1 text-xs font-semibold text-slate-600">Khóa học: {item.course_title}</p>
+                        )}
+                        <p className="mt-1 break-words text-xs font-semibold text-slate-700">
+                          Ngân hàng: {bankLabel || 'Chưa cung cấp STK'}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-sm font-black text-emerald-700">{formatCurrency(Number(item.amount || 0))}</p>
+                        <span className="mt-1 inline-flex whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-indigo-700">
+                          {payoutStatusLabels[item.status] || item.status}
+                        </span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black text-emerald-700">{formatCurrency(Number(item.amount || 0))}</p>
-                      <span className="mt-1 inline-flex rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-indigo-700">{item.status}</span>
+                    {item.qr_image_url && (
+                      <a href={item.qr_image_url} target="_blank" rel="noreferrer" className="mt-2 inline-block">
+                        <img src={item.qr_image_url} alt="QR gia sư" className="h-20 w-20 rounded-lg border border-slate-200 bg-white object-cover" />
+                      </a>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {item.status === 'pending' && (
+                        <>
+                          <button onClick={() => handlePayoutAction(item.id, 'approve')} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white">Duyệt</button>
+                          <button onClick={() => handlePayoutAction(item.id, 'reject')} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700">Từ chối</button>
+                        </>
+                      )}
+                      {['pending', 'approved'].includes(item.status) && (
+                        <button onClick={() => handlePayoutAction(item.id, 'paid')} className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-black text-white">Đã chuyển</button>
+                      )}
+                      {qrHref && (
+                        <a href={qrHref} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700">
+                          <QrCode className="h-3.5 w-3.5" />
+                          Mở QR
+                        </a>
+                      )}
                     </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {item.status === 'pending' && (
-                      <>
-                        <button onClick={() => handlePayoutAction(item.id, 'approve')} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-black text-white">Duyệt</button>
-                        <button onClick={() => handlePayoutAction(item.id, 'reject')} className="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-700">Từ chối</button>
-                      </>
-                    )}
-                    {['pending', 'approved'].includes(item.status) && (
-                      <button onClick={() => handlePayoutAction(item.id, 'paid')} className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-black text-white">Đã chuyển</button>
-                    )}
-                    {item.qr_code_url && <a href={item.qr_code_url} target="_blank" rel="noreferrer" className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700">Mở QR</a>}
-                  </div>
-                </div>
-              ))}
-              {(finance?.payout_requests || []).length === 0 && (
+                );
+              })}
+              {pagedPayouts.pagedItems.length === 0 && (
                 <p className="rounded-xl border border-dashed border-slate-200 p-4 text-sm font-semibold text-slate-400">Chưa có yêu cầu chuyển tiền.</p>
               )}
+              <Pagination
+                currentPage={pagedPayouts.currentPage}
+                totalCount={pagedPayouts.totalCount}
+                pageSize={pagedPayouts.pageSize}
+                totalPages={pagedPayouts.totalPages}
+                onPageChange={setPayoutsPage}
+              />
             </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="text-base font-black text-slate-900">Giao dịch gần đây</h2>
             <div className="mt-4 space-y-3">
-              {(finance?.recent_transactions || []).slice(0, 8).map((item: any) => (
+              {pagedTransactions.pagedItems.map((item: any) => (
                 <div key={item.id} className="rounded-xl bg-slate-50 p-3">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -239,6 +295,13 @@ const AdminFinanceManagement: React.FC = () => {
                   <p className="mt-2 text-xs font-semibold text-slate-400">{formatDate(item.created_at)}</p>
                 </div>
               ))}
+              <Pagination
+                currentPage={pagedTransactions.currentPage}
+                totalCount={pagedTransactions.totalCount}
+                pageSize={pagedTransactions.pageSize}
+                totalPages={pagedTransactions.totalPages}
+                onPageChange={setTxPage}
+              />
             </div>
           </div>
         </section>

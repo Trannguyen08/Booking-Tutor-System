@@ -20,6 +20,15 @@ const years = Array.from({ length: 5 }, (_, index) => currentYear - index);
 
 const numberValue = (value: any) => Number(value || 0);
 
+const transactionLabels: Record<string, string> = {
+  deposit_topup: 'Nạp cọc bảo chứng',
+  commission_accrual: 'Ghi nhận commission',
+  commission_payment: 'Thanh toán commission',
+  deposit_deduction: 'Trừ cọc bảo chứng',
+  deposit_refund: 'Hoàn cọc',
+  deposit_release: 'Trả cọc còn lại',
+};
+
 const StatCard = ({ title, value, icon: Icon, tone, note }: any) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-3">
@@ -191,7 +200,7 @@ const AdminDashboard: React.FC = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-sm font-black text-slate-900">{item.tutor_name || 'Gia sư'}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">{item.transaction_type}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">{transactionLabels[item.transaction_type] || item.transaction_type}</p>
                   </div>
                   <p className="text-sm font-black text-emerald-700">{formatCurrency(numberValue(item.amount))}</p>
                 </div>

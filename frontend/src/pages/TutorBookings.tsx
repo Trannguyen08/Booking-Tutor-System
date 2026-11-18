@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, Eye, Flag, Search, XCircle } from 'lucide-react';
 import { bookingsApi } from '../api/bookings';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 import { useToast } from '../components/ui/Toast';
 
 const statusLabels: Record<string, string> = {
@@ -112,6 +113,7 @@ const TutorBookings: React.FC = () => {
   const [bookings, setBookings] = useState<any[]>([]);
   const [status, setStatus] = useState('all');
   const [keyword, setKeyword] = useState('');
+  const [page, setPage] = useState(1);
   const [processingKey, setProcessingKey] = useState<string | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<any>(null);
 
@@ -185,6 +187,12 @@ const TutorBookings: React.FC = () => {
     });
   }, [grouped, keyword, status]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [keyword, status]);
+
+  const pagedBookings = useClientPagination(filtered, page, 10);
+
   const decideGroup = async (group: any, action: 'approve' | 'reject') => {
     const pendingItems = group.items.filter((item: any) => item.status === 'pending');
     if (pendingItems.length === 0) return;
@@ -257,7 +265,7 @@ const TutorBookings: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map(group => (
+              {pagedBookings.pagedItems.map(group => (
                 <tr key={group.key} className="align-middle">
                   <td className="px-5 py-4">
                     <p className="font-extrabold text-slate-900">{group.student_info?.fullName || group.student?.full_name || group.student?.username || '---'}</p>
@@ -300,6 +308,15 @@ const TutorBookings: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="px-5 pb-4">
+          <Pagination
+            currentPage={pagedBookings.currentPage}
+            totalCount={pagedBookings.totalCount}
+            pageSize={pagedBookings.pageSize}
+            totalPages={pagedBookings.totalPages}
+            onPageChange={setPage}
+          />
         </div>
       </div>
 

@@ -91,6 +91,35 @@ class OnlineClassSession(models.Model):
         return f"{self.online_class.title} - Buổi {self.session_number}"
 
 
+class OnlineClassSessionMaterial(models.Model):
+    MATERIAL_TYPES = [
+        ("note", "Ghi chú"),
+        ("image", "Hình ảnh"),
+        ("file", "File tài liệu"),
+        ("video", "Video"),
+        ("link", "Đường dẫn"),
+    ]
+
+    session = models.ForeignKey(
+        OnlineClassSession, on_delete=models.CASCADE, related_name="materials"
+    )
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    material_type = models.CharField(
+        max_length=20, choices=MATERIAL_TYPES, default="note"
+    )
+    title = models.CharField(max_length=255)
+    content = models.TextField(blank=True)
+    file = models.FileField(upload_to="online_classes/materials/", null=True, blank=True)
+    external_url = models.URLField(max_length=1000, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.get_material_type_display()} - {self.title}"
+
+
 class OnlineClassEnrollment(models.Model):
     BILLING_CYCLE_CHOICES = OnlineClass.BILLING_CYCLE_CHOICES
     STATUS_CHOICES = [

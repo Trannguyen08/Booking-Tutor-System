@@ -1,9 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, BookOpen, CalendarDays, Clock, Search, Star, UserRound, Video } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, Clock, Search, Sparkles, Star, UserRound, Video } from 'lucide-react';
 import { onlineClassesApi } from '../api/onlineClasses';
+import { aiApi } from '../api/ai';
+import { Pagination } from '../components/ui/Pagination';
 import { tutorService } from '../services/tutorService';
 import { getAccessToken } from '../utils/auth';
+
+const REFUND_STATUS_LABELS: Record<string, string> = {
+  none: 'Không hoàn tiền',
+  pending: 'Chờ hoàn tiền',
+  refunded: 'Đã hoàn tiền',
+  rejected: 'Từ chối hoàn',
+};
 
 const money = (value: string | number | undefined) =>
   Number(value || 0).toLocaleString('vi-VN');
@@ -15,24 +24,78 @@ const OnlineClasses: React.FC = () => {
   const [search, setSearch] = useState('');
   const [subject, setSubject] = useState('');
   const [tab, setTab] = useState<'all' | 'mine'>('all');
+  const [allPage, setAllPage] = useState(1);
+  const [allPagination, setAllPagination] = useState<{ count: number; total_pages: number; page: number; page_size: number } | null>(null);
+  const [minePage, setMinePage] = useState(1);
+  const [minePagination, setMinePagination] = useState<{ count: number; total_pages: number; page: number; page_size: number } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiGoal, setAiGoal] = useState('');
+  const [aiWeeklyHours, setAiWeeklyHours] = useState(4);
+  const [aiBudget, setAiBudget] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState<any>(null);
   const isLoggedIn = Boolean(getAccessToken('user'));
 
-  const loadData = async () => {
+  const handleGenerateRoadmap = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!aiGoal.trim()) return;
+    setAiLoading(true);
+    try {
+      const res = await aiApi.learningRoadmap({
+        goal: aiGoal.trim(),
+        weekly_hours: aiWeeklyHours,
+        budget_per_session: aiBudget ? Number(aiBudget) : null,
+      });
+      setAiResult(res);
+    } catch {
+      setAiResult(null);
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  const loadData = async (nextAllPage = allPage, nextMinePage = minePage) => {
     setLoading(true);
     try {
       const [classData, subjectData] = await Promise.all([
         onlineClassesApi.getPublicClasses({
           search: search.trim() || undefined,
           subject: subject || undefined,
+          page: nextAllPage,
+          page_size: 10,
         }),
         tutorService.getSubjects().catch(() => []),
       ]);
-      setClasses(Array.isArray(classData) ? classData : []);
+      if (Array.isArray(classData)) {
+        setClasses(classData);
+        setAllPagination({ count: classData.length, page: 1, page_size: 10, total_pages: Math.max(1, Math.ceil(classData.length / 10)) });
+      } else {
+        const list = Array.isArray(classData?.results) ? classData.results : [];
+        setClasses(list);
+        setAllPagination({
+          count: Number(classData?.count ?? list.length),
+          page: Number(classData?.page ?? nextAllPage),
+          page_size: Number(classData?.page_size ?? 10),
+          total_pages: Number(classData?.total_pages ?? 1),
+        });
+      }
       setSubjects(Array.isArray(subjectData) ? subjectData : []);
       if (isLoggedIn) {
-        const mine = await onlineClassesApi.getMyEnrollments().catch(() => []);
-        setMyEnrollments(Array.isArray(mine) ? mine : []);
+        const mine = await onlineClassesApi.getMyEnrollments({ page: nextMinePage, page_size: 10 }).catch(() => []);
+        if (Array.isArray(mine)) {
+          setMyEnrollments(mine);
+          setMinePagination({ count: mine.length, page: 1, page_size: 10, total_pages: Math.max(1, Math.ceil(mine.length / 10)) });
+        } else {
+          const mineList = Array.isArray(mine?.results) ? mine.results : [];
+          setMyEnrollments(mineList);
+          setMinePagination({
+            count: Number(mine?.count ?? mineList.length),
+            page: Number(mine?.page ?? nextMinePage),
+            page_size: Number(mine?.page_size ?? 10),
+            total_pages: Number(mine?.total_pages ?? 1),
+          });
+        }
       }
     } finally {
       setLoading(false);
@@ -40,9 +103,9 @@ const OnlineClasses: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    loadData(allPage, minePage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subject]);
+  }, [subject, allPage, minePage]);
 
   const displayedClasses = useMemo(() => classes, [classes]);
 
@@ -62,36 +125,174 @@ const OnlineClasses: React.FC = () => {
               Tham gia lớp học trực tuyến với sĩ số giới hạn, đóng học phí linh hoạt theo buổi hoặc toàn khóa qua PayOS.
             </p>
           </div>
-          {isLoggedIn && (
-            <div className="inline-flex rounded-xl bg-white p-1 border border-gray-200 shrink-0">
-              <button
-                type="button"
-                onClick={() => setTab('all')}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition ${
-                  tab === 'all' ? 'bg-[#5a5ce6] text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                Tất cả lớp ({classes.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setTab('mine')}
-                className={`rounded-lg px-4 py-2 text-xs font-bold transition ${
-                  tab === 'mine' ? 'bg-[#5a5ce6] text-white' : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                Lớp đã đăng ký ({myEnrollments.length})
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setAiOpen((v) => !v)}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-[#5a5ce6] to-indigo-600 px-4 py-2.5 text-xs font-extrabold text-white shadow-sm hover:opacity-95"
+            >
+              <Sparkles className="h-4 w-4" />
+              AI Thiết kế lộ trình & Gợi ý lớp
+            </button>
+            {isLoggedIn && (
+              <div className="inline-flex rounded-xl bg-white p-1 border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setTab('all')}
+                  className={`rounded-lg px-4 py-2 text-xs font-bold transition ${
+                    tab === 'all' ? 'bg-[#5a5ce6] text-white' : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Tất cả lớp ({allPagination?.count ?? classes.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTab('mine')}
+                  className={`rounded-lg px-4 py-2 text-xs font-bold transition ${
+                    tab === 'mine' ? 'bg-[#5a5ce6] text-white' : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Lớp đã đăng ký ({minePagination?.count ?? myEnrollments.length})
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {aiOpen && (
+          <div className="rounded-3xl border border-indigo-200 bg-white p-6 shadow-md space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-extrabold text-[#1e1b4b] flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-[#5a5ce6]" />
+                  AI Cố vấn lộ trình học & Ghép lớp / Gia sư phù hợp
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Nhập mục tiêu học tập của bạn, AI sẽ tự động lập lộ trình theo từng giai đoạn và đề xuất lớp nhóm online + gia sư 1-1 phù hợp nhất.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleGenerateRoadmap} className="grid gap-3 md:grid-cols-[1fr_140px_180px_auto]">
+              <input
+                required
+                value={aiGoal}
+                onChange={(e) => setAiGoal(e.target.value)}
+                placeholder="VD: Mất gốc Toán 12 muốn thi THPTQG đạt 8+, hoặc luyện IELTS 6.5..."
+                className="rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm outline-none focus:border-[#5a5ce6]"
+              />
+              <input
+                type="number"
+                min={1}
+                max={40}
+                value={aiWeeklyHours}
+                onChange={(e) => setAiWeeklyHours(Number(e.target.value) || 3)}
+                placeholder="Giờ/tuần"
+                className="rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm outline-none focus:border-[#5a5ce6]"
+              />
+              <input
+                type="number"
+                min={0}
+                step={10000}
+                value={aiBudget}
+                onChange={(e) => setAiBudget(e.target.value)}
+                placeholder="Ngân sách/buổi (đ)"
+                className="rounded-xl border border-gray-200 px-3.5 py-2.5 text-sm outline-none focus:border-[#5a5ce6]"
+              />
+              <button
+                type="submit"
+                disabled={aiLoading}
+                className="rounded-xl bg-[#5a5ce6] px-5 py-2.5 text-sm font-extrabold text-white hover:bg-[#4b4de0] disabled:opacity-50"
+              >
+                {aiLoading ? 'Đang lập lộ trình...' : 'Tạo lộ trình AI'}
+              </button>
+            </form>
+
+            {aiResult?.roadmap && (
+              <div className="space-y-4 border-t border-indigo-50 pt-4">
+                <div className="rounded-2xl bg-indigo-50/70 p-4">
+                  <p className="text-sm font-extrabold text-[#1e1b4b]">{aiResult.roadmap.summary}</p>
+                  <p className="mt-1 text-xs font-semibold text-indigo-700">
+                    Môn nhận diện: {aiResult.roadmap.detected_subject} · Trình độ: {aiResult.roadmap.detected_level} · Dự kiến {aiResult.roadmap.recommended_weeks} tuần ({aiResult.roadmap.estimated_sessions} buổi)
+                  </p>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  {(aiResult.roadmap.milestones || []).map((m: any, idx: number) => (
+                    <div key={idx} className="rounded-2xl border border-indigo-100 bg-gray-50/70 p-4 space-y-2">
+                      <span className="inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-[11px] font-extrabold text-indigo-700">
+                        {m.phase}
+                      </span>
+                      <h4 className="text-sm font-extrabold text-slate-900">{m.title}</h4>
+                      <ul className="space-y-1 text-xs text-slate-600">
+                        {(m.focus_topics || []).map((t: string, i: number) => (
+                          <li key={i}>• {t}</li>
+                        ))}
+                      </ul>
+                      <p className="text-[11px] font-bold text-emerald-700">Kết quả: {m.outcome}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  {aiResult.matched_online_classes?.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-extrabold uppercase text-slate-500">Lớp online phù hợp gợi ý</p>
+                      <div className="space-y-2">
+                        {aiResult.matched_online_classes.map((oc: any) => (
+                          <Link
+                            key={oc.id}
+                            to={`/online-classes/${oc.id}`}
+                            className="flex items-center justify-between rounded-xl border border-gray-200 p-3 hover:border-[#5a5ce6] transition"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-slate-900">{oc.title}</p>
+                              <p className="text-xs text-slate-500">{oc.tutor_name} · {oc.schedule_text}</p>
+                            </div>
+                            <span className="shrink-0 text-xs font-extrabold text-[#5a5ce6]">
+                              {money(oc.price_per_session)}đ/buổi →
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {aiResult.matched_tutors?.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-xs font-extrabold uppercase text-slate-500">Gia sư 1-1 phù hợp gợi ý</p>
+                      <div className="space-y-2">
+                        {aiResult.matched_tutors.map((t: any) => (
+                          <Link
+                            key={t.id}
+                            to={`/tutor/${t.id}`}
+                            className="flex items-center justify-between rounded-xl border border-gray-200 p-3 hover:border-[#5a5ce6] transition"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-slate-900">{t.full_name}</p>
+                              <p className="truncate text-xs text-slate-500">{(t.subjects || []).join(', ')} · {(t.rating_avg || 0).toFixed(1)}★</p>
+                            </div>
+                            <span className="shrink-0 text-xs font-extrabold text-emerald-600">
+                              {t.min_hourly_rate ? `${money(t.min_hourly_rate)}đ/giờ` : 'Xem hồ sơ'} →
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {tab === 'all' ? (
           <>
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                loadData();
+                if (allPage !== 1) setAllPage(1);
+                else loadData(1, minePage);
               }}
               className="grid gap-3 rounded-2xl border border-indigo-50 bg-white p-4 shadow-sm md:grid-cols-[1fr_220px_auto]"
             >
@@ -135,6 +336,7 @@ const OnlineClasses: React.FC = () => {
                 Chưa có lớp dạy online nào phù hợp.
               </div>
             ) : (
+              <>
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {displayedClasses.map((item) => {
                   const full = item.seats_remaining <= 0;
@@ -235,9 +437,18 @@ const OnlineClasses: React.FC = () => {
                   );
                 })}
               </div>
+              <Pagination
+                currentPage={allPagination?.page || allPage}
+                totalCount={allPagination?.count ?? displayedClasses.length}
+                pageSize={10}
+                totalPages={allPagination?.total_pages}
+                onPageChange={setAllPage}
+              />
+              </>
             )}
           </>
         ) : (
+          <>
           <div className="grid gap-4 md:grid-cols-2">
             {myEnrollments.length === 0 ? (
               <div className="md:col-span-2 rounded-2xl border border-dashed border-gray-200 bg-white p-12 text-center text-sm font-semibold text-gray-400">
@@ -288,7 +499,7 @@ const OnlineClasses: React.FC = () => {
                     )}
                     {Number(enr.refund_amount) > 0 && (
                       <p className="mt-2 text-xs font-bold text-emerald-700">
-                        Tiền hoàn lại: {money(enr.refund_amount)}đ ({enr.refund_status})
+                        Tiền hoàn lại: {money(enr.refund_amount)}đ ({REFUND_STATUS_LABELS[enr.refund_status] || enr.refund_status})
                       </p>
                     )}
                   </div>
@@ -313,6 +524,14 @@ const OnlineClasses: React.FC = () => {
               ))
             )}
           </div>
+          <Pagination
+            currentPage={minePagination?.page || minePage}
+            totalCount={minePagination?.count ?? myEnrollments.length}
+            pageSize={10}
+            totalPages={minePagination?.total_pages}
+            onPageChange={setMinePage}
+          />
+          </>
         )}
       </div>
     </div>

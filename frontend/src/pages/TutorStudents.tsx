@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Search, Users } from 'lucide-react';
 import { bookingsApi } from '../api/bookings';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 
 const formatDate = (value?: string) => {
   if (!value) return '';
@@ -12,6 +13,7 @@ const formatDate = (value?: string) => {
 const TutorStudents: React.FC = () => {
   const [students, setStudents] = useState<any[]>([]);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -41,6 +43,12 @@ const TutorStudents: React.FC = () => {
     ].filter(Boolean).join(' ').toLowerCase();
     return keyword.includes(search.toLowerCase());
   });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
+  const pagedStudents = useClientPagination(filtered, page, 10);
 
   return (
     <div className="space-y-8">
@@ -91,7 +99,7 @@ const TutorStudents: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map(student => {
+                {pagedStudents.pagedItems.map(student => {
                   const info = student.student_info || {};
                   const displayName = info.fullName || student.username || student.email;
                   const displayPhone = info.phone || student.phone;
@@ -139,6 +147,15 @@ const TutorStudents: React.FC = () => {
                 })}
               </tbody>
             </table>
+          </div>
+          <div className="px-5 pb-4">
+            <Pagination
+              currentPage={pagedStudents.currentPage}
+              totalCount={pagedStudents.totalCount}
+              pageSize={pagedStudents.pageSize}
+              totalPages={pagedStudents.totalPages}
+              onPageChange={setPage}
+            />
           </div>
         </div>
       )}

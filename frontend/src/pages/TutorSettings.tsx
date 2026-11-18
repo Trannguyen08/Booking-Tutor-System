@@ -6,9 +6,10 @@ import {
   Edit3,
   EyeOff,
   FileText,
-  Image as ImageIcon,
+  Landmark,
   Lock,
   Plus,
+  QrCode,
   Save,
   ShieldCheck,
   ToggleLeft,
@@ -20,6 +21,7 @@ import {
 import client from '../api/client';
 import { useToast } from '../components/ui/Toast';
 import { tutorService } from '../services/tutorService';
+import { formatNumberInput, parseMoneyInput } from '../utils/format';
 import { validateRequired } from '../utils/validation';
 import { useTutorStore } from '../store/useTutorStore';
 
@@ -68,24 +70,6 @@ const Select = ({ label, children, ...props }: any) => (
   </label>
 );
 
-const ImageTile = ({ label, url }: { label: string; url?: string }) => (
-  <a
-    href={url || undefined}
-    target="_blank"
-    rel="noreferrer"
-    className={`group block overflow-hidden rounded-2xl border border-slate-200 bg-white ${url ? 'hover:border-emerald-300 hover:shadow-sm' : 'pointer-events-none'}`}
-  >
-    {url ? (
-      <img src={url} alt={label} className="h-36 w-full object-cover" />
-    ) : (
-      <div className="grid h-36 place-items-center bg-slate-50 text-slate-300">
-        <ImageIcon className="h-8 w-8" />
-      </div>
-    )}
-    <div className="border-t border-slate-100 px-3 py-2 text-xs font-black uppercase tracking-wider text-slate-500">{label}</div>
-  </a>
-);
-
 const TutorSettings: React.FC = () => {
   const { profile, fetchProfile, updateProfile, isLoading } = useTutorStore();
   const { showToast } = useToast();
@@ -96,11 +80,55 @@ const TutorSettings: React.FC = () => {
   const [subjectEditor, setSubjectEditor] = useState<any>(null);
   const [isUploadingCv, setIsUploadingCv] = useState(false);
   const cvInputRef = useRef<HTMLInputElement>(null);
+  const [bankForm, setBankForm] = useState({
+    bank_name: '',
+    bank_account_number: '',
+    bank_account_holder: '',
+    bank_branch: '',
+  });
+  const [bankQrFile, setBankQrFile] = useState<File | null>(null);
+  const [bankQrPreview, setBankQrPreview] = useState('');
+  const [savingBank, setSavingBank] = useState(false);
+  const bankQrInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchProfile();
     tutorService.getSubjects().then(setSubjects).catch(() => setSubjects([]));
+    client.get('/auth/me/').then((res) => {
+      const u = res.data || {};
+      setBankForm({
+        bank_name: u.bank_name || '',
+        bank_account_number: u.bank_account_number || '',
+        bank_account_holder: u.bank_account_holder || '',
+        bank_branch: u.bank_branch || '',
+      });
+      setBankQrPreview(u.bank_qr_url || u.bank_qr_image || '');
+    }).catch(() => {});
   }, [fetchProfile]);
+
+  const handleSaveBankInfo = async () => {
+    setSavingBank(true);
+    try {
+      const payload = new FormData();
+      payload.append('bank_name', bankForm.bank_name);
+      payload.append('bank_account_number', bankForm.bank_account_number);
+      payload.append('bank_account_holder', bankForm.bank_account_holder);
+      payload.append('bank_branch', bankForm.bank_branch);
+      if (bankQrFile) {
+        payload.append('bank_qr_image', bankQrFile);
+      }
+      const res = await client.patch('/auth/me/', payload, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setBankQrFile(null);
+      setBankQrPreview(res.data?.bank_qr_url || res.data?.bank_qr_image || bankQrPreview);
+      showToast('Đã lưu thông tin ngân hàng & mã QR nhận tiền.', 'success');
+    } catch (error: any) {
+      showToast(error.response?.data?.error || 'Không thể lưu thông tin ngân hàng.', 'error');
+    } finally {
+      setSavingBank(false);
+    }
+  };
 
   useEffect(() => {
     if (profile) {
@@ -361,7 +389,7 @@ const TutorSettings: React.FC = () => {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Email" value={formData.email} />
                   <Field label="Số điện thoại" value={formData.phone} />
-                  <Field label="CCCD" value={formData.cccd_number} />
+                  {formData.cccd_number && <Field label="CCCD" value={formData.cccd_number} />}
                   <Field label="Ngày sinh" value={formatDate(formData.birthday)} />
                   <Field label="Trường đại học" value={formData.university} />
                   <Field label="Trình độ duyệt" value={formData.qualification} />
@@ -431,8 +459,8 @@ const TutorSettings: React.FC = () => {
         <div className="overflow-hidden rounded-2xl border border-slate-100">
           <div className="grid grid-cols-[1.1fr_1fr_160px_140px_96px] bg-slate-50 px-4 py-3 text-[11px] font-black uppercase tracking-widest text-slate-400">
             <span>Môn</span>
-            <span>Đối tượng</span>
-            <span>Tiền 1h</span>
+            <span className="text-center">Đối tượng</span>
+            <span className="text-center">Tiền 1h</span>
             <span>Trạng thái</span>
             <span className="text-right">Thao tác</span>
           </div>
@@ -441,8 +469,8 @@ const TutorSettings: React.FC = () => {
               <div>
                 <p className="font-black">{item.subject_name || subjects.find((subject) => String(subject.id) === String(item.subject))?.name || 'Chưa chọn môn'}</p>
               </div>
-              <p className="text-sm font-bold">{item.level || 'Tùy nhu cầu'}</p>
-              <p className="text-sm font-black text-emerald-700">{formatMoney(item.hourly_rate)}đ</p>
+              <p className="text-center text-sm font-bold">{item.level || 'Tùy nhu cầu'}</p>
+              <p className="text-center text-sm font-black text-emerald-700">{formatMoney(item.hourly_rate)}đ</p>
               <button
                 type="button"
                 onClick={() => toggleSubject(idx)}
@@ -465,23 +493,6 @@ const TutorSettings: React.FC = () => {
             <div className="border-t border-slate-100 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-400">
               Bạn chưa có môn dạy nào.
             </div>
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h3 className="text-lg font-black text-slate-950">Ảnh xác thực & thành tích</h3>
-        <p className="mt-1 text-sm font-semibold text-slate-500">Hiển thị đúng URL ảnh đang lưu trong DB/storage.</p>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <ImageTile label="Ảnh chân dung" url={avatarUrl} />
-          <ImageTile label="CCCD mặt trước" url={formData.id_front_url} />
-          <ImageTile label="CCCD mặt sau" url={formData.id_back_url} />
-          {(formData.achievements || []).length === 0 ? (
-            <ImageTile label="Thành tích" />
-          ) : (
-            formData.achievements.map((item: any) => (
-              <ImageTile key={item.id} label={item.description || 'Thành tích'} url={item.image_url} />
-            ))
           )}
         </div>
       </section>
@@ -550,6 +561,91 @@ const TutorSettings: React.FC = () => {
       </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-2xl bg-indigo-50 text-indigo-600">
+              <Landmark className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-950">Tài khoản ngân hàng &amp; Mã QR nhận tiền</h3>
+              <p className="text-sm font-semibold text-slate-500">Lưu thông tin chuyển khoản và mã QR để sử dụng khi gửi yêu cầu nhận cọc hoặc rút khỏi nền tảng.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleSaveBankInfo}
+            disabled={savingBank}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" />
+            {savingBank ? 'Đang lưu...' : 'Lưu thông tin ngân hàng'}
+          </button>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Input
+            label="Tên ngân hàng"
+            value={bankForm.bank_name}
+            onChange={(event: any) => setBankForm({ ...bankForm, bank_name: event.target.value })}
+            placeholder="VD: Vietcombank, MBBank, ACB..."
+          />
+          <Input
+            label="Số tài khoản"
+            value={bankForm.bank_account_number}
+            onChange={(event: any) => setBankForm({ ...bankForm, bank_account_number: event.target.value })}
+            placeholder="VD: 1029384756"
+          />
+          <Input
+            label="Tên chủ tài khoản"
+            value={bankForm.bank_account_holder}
+            onChange={(event: any) => setBankForm({ ...bankForm, bank_account_holder: event.target.value })}
+            placeholder="VD: NGUYEN MINH KHOI"
+          />
+          <Input
+            label="Chi nhánh"
+            value={bankForm.bank_branch}
+            onChange={(event: any) => setBankForm({ ...bankForm, bank_branch: event.target.value })}
+            placeholder="VD: CN TP.HCM"
+          />
+        </div>
+        <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center">
+          {bankQrPreview ? (
+            <a href={bankQrPreview} target="_blank" rel="noreferrer" className="shrink-0">
+              <img src={bankQrPreview} alt="QR Ngân hàng gia sư" className="h-24 w-24 rounded-xl border border-slate-200 bg-white object-cover" />
+            </a>
+          ) : (
+            <div className="grid h-24 w-24 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-300">
+              <QrCode className="h-8 w-8" />
+            </div>
+          )}
+          <div className="space-y-2">
+            <p className="text-sm font-black text-slate-800">Ảnh mã QR ngân hàng</p>
+            <p className="text-xs font-semibold text-slate-500">Admin sẽ quét mã QR này khi chuyển trả tiền cọc còn lại cho bạn.</p>
+            <input
+              ref={bankQrInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  setBankQrFile(file);
+                  setBankQrPreview(URL.createObjectURL(file));
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => bankQrInputRef.current?.click()}
+              className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50"
+            >
+              <Upload className="h-4 w-4" />
+              {bankQrPreview ? 'Đổi ảnh mã QR' : 'Tải lên ảnh mã QR'}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-5 flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-2xl bg-slate-100 text-slate-600">
             <Lock className="h-5 w-5" />
@@ -600,12 +696,12 @@ const TutorSettings: React.FC = () => {
                 ))}
               </Select>
               <Input
-                label="Tiền 1h"
-                type="number"
-                min="0"
-                step="1000"
-                value={subjectEditor.data.hourly_rate || DEFAULT_RATE}
-                onChange={(event: any) => updateSubjectEditor('hourly_rate', event.target.value)}
+                label="Tiền 1h (VNĐ)"
+                type="text"
+                inputMode="numeric"
+                value={formatNumberInput(subjectEditor.data.hourly_rate ?? DEFAULT_RATE)}
+                onChange={(event: any) => updateSubjectEditor('hourly_rate', String(parseMoneyInput(event.target.value)))}
+                placeholder="VD: 180.000"
               />
             </div>
             <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">

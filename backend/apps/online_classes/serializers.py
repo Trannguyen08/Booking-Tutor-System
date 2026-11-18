@@ -1,3 +1,5 @@
+import re
+
 from django.db.models import Avg
 from rest_framework import serializers
 
@@ -7,11 +9,44 @@ from .models import (
     OnlineClassPayment,
     OnlineClassReview,
     OnlineClassSession,
+    OnlineClassSessionMaterial,
 )
 from .services import compute_attended_sessions
 
 
+class OnlineClassSessionMaterialSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+    uploaded_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OnlineClassSessionMaterial
+        fields = [
+            "id",
+            "session",
+            "material_type",
+            "title",
+            "content",
+            "file_url",
+            "external_url",
+            "uploaded_by_name",
+            "created_at",
+        ]
+        read_only_fields = ["id", "session", "file_url", "uploaded_by_name", "created_at"]
+
+    def get_file_url(self, obj):
+        if not obj.file:
+            return ""
+        request = self.context.get("request")
+        url = obj.file.url
+        return request.build_absolute_uri(url) if request and url.startswith("/") else url
+
+    def get_uploaded_by_name(self, obj):
+        return obj.uploaded_by.get_full_name() or obj.uploaded_by.username or obj.uploaded_by.email
+
+
 class OnlineClassSessionSerializer(serializers.ModelSerializer):
+    materials = OnlineClassSessionMaterialSerializer(many=True, read_only=True)
+
     class Meta:
         model = OnlineClassSession
         fields = [
@@ -24,9 +59,24 @@ class OnlineClassSessionSerializer(serializers.ModelSerializer):
             "status",
             "notes",
             "material_url",
+            "materials",
             "created_at",
         ]
-        read_only_fields = ["id", "online_class", "created_at"]
+        read_only_fields = ["id", "online_class", "materials", "created_at"]
+
+    @staticmethod
+    def _clean_title(value: str) -> str:
+        return re.sub(r"^(?:Buổi\s*\d+\s*[:.\-–]\s*)+", "", (value or "").strip(), flags=re.IGNORECASE).strip()
+
+    def validate_title(self, value):
+        return self._clean_title(value)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        cleaned = self._clean_title(data.get("title", ""))
+        if cleaned:
+            data["title"] = cleaned
+        return data
 
 
 class OnlineClassReviewSerializer(serializers.ModelSerializer):
@@ -97,6 +147,7 @@ class OnlineClassEnrollmentSerializer(serializers.ModelSerializer):
     computed_attended_sessions = serializers.SerializerMethodField()
     payments = OnlineClassPaymentSerializer(many=True, read_only=True)
     has_reviewed = serializers.SerializerMethodField()
+    student_bank_info = serializers.SerializerMethodField()
 
     class Meta:
         model = OnlineClassEnrollment
@@ -110,6 +161,7 @@ class OnlineClassEnrollmentSerializer(serializers.ModelSerializer):
             "student_name",
             "student_email",
             "student_phone",
+            "student_bank_info",
             "billing_cycle",
             "status",
             "sessions_paid_total",
@@ -150,6 +202,22 @@ class OnlineClassEnrollmentSerializer(serializers.ModelSerializer):
 
     def get_has_reviewed(self, obj):
         return hasattr(obj, "review")
+
+    def get_student_bank_info(self, obj):
+        stu = obj.student
+        qr_field = getattr(stu, "bank_qr_image", None)
+        qr_url = ""
+        if qr_field:
+            request = self.context.get("request")
+            url = qr_field.url
+            qr_url = request.build_absolute_uri(url) if request and url.startswith("/") else url
+        return {
+            "bank_name": getattr(stu, "bank_name", "") or "",
+            "bank_account_number": getattr(stu, "bank_account_number", "") or "",
+            "bank_account_holder": getattr(stu, "bank_account_holder", "") or "",
+            "bank_branch": getattr(stu, "bank_branch", "") or "",
+            "bank_qr_url": qr_url,
+        }
 
 
 class OnlineClassSerializer(serializers.ModelSerializer):
@@ -269,4 +337,19 @@ class OnlineClassSerializer(serializers.ModelSerializer):
         max_students = attrs.get("max_students", getattr(self.instance, "max_students", 1))
         if max_students < 1:
             raise serializers.ValidationError({"max_students": "Sĩ số tối đa phải từ 1 trở lên."})
+
+        start_date = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end_date = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError(
+                {"end_date": "Ngày kết thúc phải lớn hơn hoặc bằng ngày khai giảng."}
+            )
+
+        subject = attrs.get("subject", getattr(self.instance, "subject", None))
+        tutor = self.context.get("tutor")
+        if tutor is not None and subject is not None:
+            if not tutor.tutor_subjects.filter(subject=subject, is_active=True).exists():
+                raise serializers.ValidationError(
+                    {"subject": "Bạn chỉ có thể tạo lớp cho môn học đã đăng ký dạy trong hồ sơ gia sư."}
+                )
         return attrs

@@ -22,10 +22,17 @@ const Profile: React.FC = () => {
     last_name: '',
     phone: '',
     bio: '',
+    bank_name: '',
+    bank_account_number: '',
+    bank_account_holder: '',
+    bank_branch: '',
   });
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string>('');
+  const [bankQrFile, setBankQrFile] = useState<File | null>(null);
+  const [bankQrPreview, setBankQrPreview] = useState<string>('');
   const avatarRef = useRef<HTMLInputElement>(null);
+  const bankQrRef = useRef<HTMLInputElement>(null);
 
   const [passwordForm, setPasswordForm] = useState({
     old_password: '',
@@ -51,8 +58,13 @@ const Profile: React.FC = () => {
           last_name: data.last_name || '',
           phone: data.phone || '',
           bio: data.bio || '',
+          bank_name: data.bank_name || '',
+          bank_account_number: data.bank_account_number || '',
+          bank_account_holder: data.bank_account_holder || '',
+          bank_branch: data.bank_branch || '',
         });
         setAvatarPreview(data.avatar_url || data.avatar || '');
+        setBankQrPreview(data.bank_qr_url || data.bank_qr_image || '');
       })
       .catch(() => {
         showToast('Không tải được thông tin hồ sơ.', 'error');
@@ -75,8 +87,15 @@ const Profile: React.FC = () => {
       payload.append('last_name', form.last_name);
       payload.append('phone', form.phone);
       payload.append('bio', form.bio);
+      payload.append('bank_name', form.bank_name);
+      payload.append('bank_account_number', form.bank_account_number);
+      payload.append('bank_account_holder', form.bank_account_holder);
+      payload.append('bank_branch', form.bank_branch);
       if (avatarFile) {
         payload.append('avatar', avatarFile);
+      }
+      if (bankQrFile) {
+        payload.append('bank_qr_image', bankQrFile);
       }
 
       const res = await client.patch('/auth/me/', payload, {
@@ -84,7 +103,9 @@ const Profile: React.FC = () => {
       });
       setUser(res.data);
       setAvatarFile(null);
+      setBankQrFile(null);
       setAvatarPreview(res.data.avatar_url || res.data.avatar || avatarPreview);
+      setBankQrPreview(res.data.bank_qr_url || res.data.bank_qr_image || bankQrPreview);
       updateStoredUser(res.data);
       showToast('Đã cập nhật hồ sơ cá nhân.', 'success');
     } catch (error: any) {
@@ -253,6 +274,89 @@ const Profile: React.FC = () => {
                   className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold outline-none focus:border-[#5a5ce6] resize-none"
                 />
               </label>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 space-y-4">
+              <div>
+                <h3 className="text-base font-extrabold text-gray-900">Tài khoản ngân hàng &amp; Mã QR nhận hoàn tiền</h3>
+                <p className="text-xs font-medium text-gray-500 mt-0.5">
+                  Dùng để tự động điền khi yêu cầu hủy khóa hoặc để quản trị viên hoàn học phí khi có sự cố lớp học.
+                </p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="block text-xs font-bold uppercase text-gray-500 mb-1.5">Tên ngân hàng</span>
+                  <input
+                    value={form.bank_name}
+                    onChange={(e) => setForm({ ...form, bank_name: e.target.value })}
+                    placeholder="VD: Vietcombank, Techcombank, MBBank..."
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold outline-none focus:border-[#5a5ce6]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-xs font-bold uppercase text-gray-500 mb-1.5">Số tài khoản</span>
+                  <input
+                    value={form.bank_account_number}
+                    onChange={(e) => setForm({ ...form, bank_account_number: e.target.value })}
+                    placeholder="VD: 1029384756"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold outline-none focus:border-[#5a5ce6]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-xs font-bold uppercase text-gray-500 mb-1.5">Tên chủ tài khoản</span>
+                  <input
+                    value={form.bank_account_holder}
+                    onChange={(e) => setForm({ ...form, bank_account_holder: e.target.value })}
+                    placeholder="VD: NGUYEN VAN A"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold outline-none focus:border-[#5a5ce6]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-xs font-bold uppercase text-gray-500 mb-1.5">Chi nhánh</span>
+                  <input
+                    value={form.bank_branch}
+                    onChange={(e) => setForm({ ...form, bank_branch: e.target.value })}
+                    placeholder="VD: CN TP.HCM"
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-semibold outline-none focus:border-[#5a5ce6]"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 rounded-2xl border border-dashed border-gray-200 bg-gray-50/70 p-4">
+                {bankQrPreview ? (
+                  <a href={bankQrPreview} target="_blank" rel="noreferrer" className="shrink-0">
+                    <img src={bankQrPreview} alt="QR Ngân hàng" className="h-24 w-24 rounded-xl border border-gray-200 object-cover bg-white" />
+                  </a>
+                ) : (
+                  <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-xs font-bold text-gray-400">
+                    Chưa có QR
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <p className="text-sm font-bold text-gray-800">Ảnh mã QR ngân hàng (VietQR / Banking App)</p>
+                  <p className="text-xs text-gray-500">Hỗ trợ JPG, PNG, WEBP. Bấm nút bên dưới để tải ảnh QR nhận tiền.</p>
+                  <input
+                    ref={bankQrRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const picked = e.target.files?.[0];
+                      if (picked) {
+                        setBankQrFile(picked);
+                        setBankQrPreview(URL.createObjectURL(picked));
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => bankQrRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-white px-4 py-2 text-xs font-bold text-[#5a5ce6] hover:bg-indigo-50"
+                  >
+                    <Camera className="w-4 h-4" />
+                    {bankQrPreview ? 'Đổi ảnh QR ngân hàng' : 'Tải ảnh QR ngân hàng'}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t border-gray-100">

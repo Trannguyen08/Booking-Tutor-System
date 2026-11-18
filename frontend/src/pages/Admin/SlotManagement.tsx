@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { adminApi } from '../../api/admin';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 
 const toArray = (data: any) => {
@@ -47,7 +48,7 @@ const Badge = ({ value, tone = 'slate' }: { value: string; tone?: string }) => {
     amber: 'border-amber-200 bg-amber-50 text-amber-700',
     rose: 'border-rose-200 bg-rose-50 text-rose-700',
   };
-  return <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
+  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
 };
 
 const Toolbar = ({ children }: { children: React.ReactNode }) => (
@@ -70,23 +71,44 @@ const Select = (props: any) => (
   <select {...props} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none" />
 );
 
+const slotStatusLabels: Record<string, string> = {
+  available: 'Còn trống',
+  booked: 'Đã đặt',
+  cancelled: 'Đã hủy',
+};
+
 export const SlotManagement: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
-  useEffect(() => { adminApi.getSlots({ search: search || undefined, status, upcoming: 'true' }).then(data => setItems(toArray(data))); }, [search, status]);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); adminApi.getSlots({ search: search || undefined, status, upcoming: 'true' }).then(data => setItems(toArray(data))).catch(() => setItems([])); }, [search, status]);
+  const pagedSlots = useClientPagination(items, page, 10);
   return (
     <div className="space-y-6">
       <PageTitle icon={CalendarClock} title="Lịch dạy và slot" subtitle="Xem slot sắp diễn ra, slot đã đặt, link học và trạng thái booking." />
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <Toolbar><SearchInput value={search} onChange={setSearch} placeholder="Tìm gia sư, môn học, meeting link..." /><Select value={status} onChange={(e: any) => setStatus(e.target.value)}><option value="all">Mọi slot</option><option value="available">Còn trống</option><option value="booked">Đã đặt</option><option value="cancelled">Đã hủy</option></Select><div /><div /></Toolbar>
-        <div className="grid gap-3 p-4 xl:grid-cols-2">{items.map(item => (
-          <div key={item.id} className="rounded-xl border border-slate-200 p-4">
-            <div className="flex items-start justify-between gap-3"><div><p className="font-black text-slate-900">{item.tutor_name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{item.subject_name || 'Môn học'} · {new Date(item.start_time).toLocaleString('vi-VN')}</p></div><Badge value={item.status} tone={item.status === 'booked' ? 'green' : item.status === 'cancelled' ? 'rose' : 'blue'} /></div>
-            <p className="mt-3 text-sm font-semibold text-slate-600">{formatCurrency(Number(item.price || 0))} · Booking #{item.booking_id || '---'} · {item.payment_status || '---'}</p>
-            <p className="mt-2 truncate text-xs text-slate-400">{item.meeting_link || 'Chưa có meeting link'}</p>
-          </div>
-        ))}</div>
+        {pagedSlots.pagedItems.length === 0 ? (
+          <div className="p-12 text-center font-semibold text-slate-400">Không có lịch slot phù hợp.</div>
+        ) : (
+          <div className="grid gap-3 p-4 xl:grid-cols-2">{pagedSlots.pagedItems.map(item => (
+            <div key={item.id} className="rounded-xl border border-slate-200 p-4">
+              <div className="flex items-start justify-between gap-3"><div><p className="font-black text-slate-900">{item.tutor_name}</p><p className="mt-1 text-xs font-semibold text-slate-500">{item.subject_name || 'Môn học'} · {new Date(item.start_time).toLocaleString('vi-VN')}</p></div><Badge value={slotStatusLabels[item.status] || item.status} tone={item.status === 'booked' ? 'green' : item.status === 'cancelled' ? 'rose' : 'blue'} /></div>
+              <p className="mt-3 text-sm font-semibold text-slate-600">{formatCurrency(Number(item.price || 0))} · Booking #{item.booking_id || '---'} · {item.payment_status || '---'}</p>
+              <p className="mt-2 truncate text-xs text-slate-400">{item.meeting_link || 'Chưa có meeting link'}</p>
+            </div>
+          ))}</div>
+        )}
+        <div className="px-4 pb-4">
+          <Pagination
+            currentPage={pagedSlots.currentPage}
+            totalCount={pagedSlots.totalCount}
+            pageSize={pagedSlots.pageSize}
+            totalPages={pagedSlots.totalPages}
+            onPageChange={setPage}
+          />
+        </div>
       </section>
     </div>
   );

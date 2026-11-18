@@ -8,19 +8,15 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
-  CreditCard,
   GraduationCap,
   LayoutDashboard,
   LogOut,
   Menu,
   Search,
   Settings,
-  ShieldAlert,
   Star,
   User as UserIcon,
   Users,
-  Video,
-  XCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../ui/Toast';
@@ -51,24 +47,49 @@ const AdminLayout: React.FC = () => {
   }, [location.pathname]);
 
   const menuItems = [
-    { name: 'Tổng quan', path: '/admin/dashboard', icon: LayoutDashboard },
-    { name: 'Duyệt gia sư', path: '/admin/tutor-approvals', icon: ShieldAlert },
-    { name: 'Quản lý gia sư', path: '/admin/tutors', icon: GraduationCap },
-    { name: 'Quản lý người dùng', path: '/admin/users', icon: Users },
-    { name: 'Booking', path: '/admin/bookings', icon: CalendarClock },
-    { name: 'Thanh toán', path: '/admin/payments', icon: CreditCard },
-    { name: 'Lịch dạy', path: '/admin/slots', icon: CalendarClock },
-    { name: 'Quản lý lớp học', path: '/admin/classes', icon: BookOpen },
-    { name: 'Lớp học online', path: '/admin/online-classes', icon: Video },
-    { name: 'Yêu cầu hủy khóa', path: '/admin/course-cancellations', icon: XCircle },
-    { name: 'Tài chính', path: '/admin/finance', icon: CircleDollarSign },
-    { name: 'Đánh giá', path: '/admin/reviews', icon: Star },
-    { name: 'Vi phạm', path: '/admin/violations', icon: ShieldAlert },
-    { name: 'Báo cáo', path: '/admin/reports', icon: BarChart3 },
-    { name: 'Cài đặt', path: '/admin/settings', icon: Settings },
+    { name: 'Tổng quan', path: '/admin/dashboard', icon: LayoutDashboard, matches: ['/admin/dashboard', '/admin'] },
+    { name: 'Gia sư', path: '/admin/tutors', icon: GraduationCap, matches: ['/admin/tutors', '/admin/tutor-approvals'] },
+    { name: 'Học viên', path: '/admin/users', icon: Users, matches: ['/admin/users'] },
+    { name: 'Đặt lịch & Lịch dạy', path: '/admin/bookings', icon: CalendarClock, matches: ['/admin/bookings', '/admin/slots'] },
+    { name: 'Lớp học & Hủy khóa', path: '/admin/classes', icon: BookOpen, matches: ['/admin/classes', '/admin/online-classes', '/admin/course-cancellations'] },
+    { name: 'Tài chính & PayOS', path: '/admin/finance', icon: CircleDollarSign, matches: ['/admin/finance', '/admin/payments'] },
+    { name: 'Đánh giá', path: '/admin/reviews', icon: Star, matches: ['/admin/reviews'] },
+    { name: 'Báo cáo & BXH', path: '/admin/reports', icon: BarChart3, matches: ['/admin/reports', '/admin/tutor-rankings'] },
+    { name: 'Cài đặt', path: '/admin/settings', icon: Settings, matches: ['/admin/settings'] },
   ];
 
-  const getPageTitle = () => menuItems.find(item => item.path === location.pathname)?.name || 'Admin Panel';
+  const searchableShortcuts = [
+    ...menuItems,
+    { name: 'Duyệt gia sư', path: '/admin/tutor-approvals' },
+    { name: 'Lịch dạy slot', path: '/admin/slots' },
+    { name: 'Lớp học online', path: '/admin/online-classes' },
+    { name: 'Yêu cầu hủy khóa', path: '/admin/course-cancellations' },
+    { name: 'Thanh toán PayOS', path: '/admin/payments' },
+    { name: 'BXH Gia sư', path: '/admin/tutor-rankings' },
+  ];
+
+  const routeTitles: Record<string, string> = {
+    '/admin': 'Tổng quan',
+    '/admin/dashboard': 'Tổng quan',
+    '/admin/tutors': 'Gia sư',
+    '/admin/tutor-approvals': 'Duyệt hồ sơ gia sư',
+    '/admin/users': 'Học viên',
+    '/admin/bookings': 'Đặt lịch (Booking)',
+    '/admin/slots': 'Lịch dạy & Slot',
+    '/admin/classes': 'Khóa học 1-1',
+    '/admin/online-classes': 'Lớp học online',
+    '/admin/course-cancellations': 'Yêu cầu hủy khóa',
+    '/admin/finance': 'Quản lý dòng tiền',
+    '/admin/payments': 'Đối soát thanh toán PayOS',
+    '/admin/reviews': 'Đánh giá',
+    '/admin/reports': 'Báo cáo doanh thu',
+    '/admin/tutor-rankings': 'BXH Gia sư',
+    '/admin/settings': 'Cài đặt',
+    '/admin/notifications': 'Thông báo vận hành',
+    '/admin/profile': 'Hồ sơ cá nhân',
+  };
+
+  const getPageTitle = () => routeTitles[location.pathname] || menuItems.find(item => item.matches.includes(location.pathname))?.name || 'Admin Panel';
 
   const handleLogout = () => {
     clearAuth();
@@ -95,19 +116,19 @@ const AdminLayout: React.FC = () => {
           )}
         </div>
 
-        <nav className="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-6">
+        <nav className="flex-1 space-y-1 px-3 py-4">
           {menuItems.map((item) => {
-            const isActive = location.pathname === item.path;
+            const isActive = item.matches.includes(location.pathname);
             const Icon = item.icon;
             return (
               <Link
                 key={item.path}
                 to={item.path}
-                className={`group flex h-11 items-center rounded-lg px-3 transition-all duration-200 ${
-                  isActive ? 'bg-blue-50 font-medium text-blue-600' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                className={`group flex h-10 items-center rounded-xl px-3 transition-all duration-200 ${
+                  isActive ? 'bg-blue-50 font-semibold text-blue-600' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
-                <Icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                <Icon className={`h-[18px] w-[18px] shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                 {!isSidebarCollapsed && <span className="ml-3 truncate text-sm">{item.name}</span>}
                 {isActive && !isSidebarCollapsed && <motion.div layoutId="active-indicator" className="ml-auto h-1.5 w-1.5 rounded-full bg-blue-600" />}
               </Link>
@@ -153,7 +174,7 @@ const AdminLayout: React.FC = () => {
                 e.preventDefault();
                 const q = menuSearch.trim().toLowerCase();
                 if (!q) return;
-                const matched = menuItems.find(item => item.name.toLowerCase().includes(q));
+                const matched = searchableShortcuts.find(item => item.name.toLowerCase().includes(q));
                 if (matched) {
                   navigate(matched.path);
                   setMenuSearch('');

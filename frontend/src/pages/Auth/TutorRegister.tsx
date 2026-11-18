@@ -40,23 +40,6 @@ const loadTutorRegisterDraft = (): { formData: TutorRegisterFormData; teachingLe
   }
 };
 
-type DocumentType = 'portrait' | 'certificate';
-
-type ImagePrecheckResult = {
-  is_valid: boolean;
-  score: number;
-  can_submit: boolean;
-  document_type: DocumentType;
-  issues: string[];
-  suggestions: string[];
-};
-
-type ImagePrecheckStatus = {
-  isChecking: boolean;
-  result?: ImagePrecheckResult;
-  error?: string;
-};
-
 const VIETNAM_PROVINCES = [
   'An Giang', 'Bắc Ninh', 'Cà Mau', 'Cần Thơ', 'Cao Bằng', 'Đà Nẵng',
   'Đắk Lắk', 'Điện Biên', 'Đồng Nai', 'Đồng Tháp', 'Gia Lai', 'Hà Nội',
@@ -78,7 +61,6 @@ const TutorRegister: React.FC = () => {
   const [achievements, setAchievements] = useState<File[]>([]);
   const [cvFile, setCvFile] = useState<File | null>(null);
   const [teachingLevels, setTeachingLevels] = useState<string[]>(draft.teachingLevels);
-  const [prechecks, setPrechecks] = useState<Record<string, ImagePrecheckStatus>>({});
   const [duplicateWarnings, setDuplicateWarnings] = useState<string[]>([]);
 
   const avatarRef = useRef<HTMLInputElement>(null);
@@ -96,45 +78,6 @@ const TutorRegister: React.FC = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const fileKey = (file: File) => `${file.name}-${file.size}-${file.lastModified}`;
-
-  useEffect(() => {
-    localStorage.setItem(
-      TUTOR_REGISTER_DRAFT_KEY,
-      JSON.stringify({ formData, teachingLevels })
-    );
-  }, [formData, teachingLevels]);
-
-  const clearPrecheck = (key: string) => {
-    setPrechecks(prev => {
-      const next = { ...prev };
-      delete next[key];
-      return next;
-    });
-  };
-
-  const precheckImage = async (key: string, file: File, documentType: DocumentType) => {
-    setPrechecks(prev => ({ ...prev, [key]: { isChecking: true } }));
-    const payload = new FormData();
-    payload.append('image', file);
-    payload.append('document_type', documentType);
-
-    try {
-      const res = await client.post('/ai/precheck-image/', payload, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setPrechecks(prev => ({ ...prev, [key]: { isChecking: false, result: res.data } }));
-    } catch (error: any) {
-      setPrechecks(prev => ({
-        ...prev,
-        [key]: {
-          isChecking: false,
-          error: error.response?.data?.error || 'Không kiểm tra được ảnh. Bạn có thể thử upload lại.',
-        },
-      }));
-    }
-  };
-
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>, type: string) => {
     const selected = Array.from(event.target.files || []);
     if (selected.length === 0) return;
@@ -145,11 +88,9 @@ const TutorRegister: React.FC = () => {
 
     if (type === 'avatar') {
       setAvatar(selected[0]);
-      precheckImage('avatar', selected[0], 'portrait');
     }
     if (type === 'achievement') {
       setAchievements(prev => [...prev, ...selected]);
-      selected.forEach(file => precheckImage(fileKey(file), file, 'certificate'));
     }
     event.target.value = '';
   };
@@ -177,9 +118,14 @@ const TutorRegister: React.FC = () => {
     setTeachingLevels(prev => prev.includes(level) ? prev.filter(item => item !== level) : [...prev, level]);
   };
 
+  useEffect(() => {
+    localStorage.setItem(
+      TUTOR_REGISTER_DRAFT_KEY,
+      JSON.stringify({ formData, teachingLevels })
+    );
+  }, [formData, teachingLevels]);
+
   const removeAchievement = (index: number) => {
-    const file = achievements[index];
-    if (file) clearPrecheck(fileKey(file));
     setAchievements(prev => prev.filter((_, idx) => idx !== index));
   };
 
@@ -244,41 +190,13 @@ const TutorRegister: React.FC = () => {
     return () => { cancelled = true; };
   }, [avatar, achievements]);
 
-  const precheckKeysForSelectedFiles = [
-    ...(avatar ? ['avatar'] : []),
-    ...achievements.map(fileKey),
-  ];
-
-  const hasBlockingPrecheck = precheckKeysForSelectedFiles.some((key) => {
-    const status = prechecks[key];
-    return !status || status.isChecking || !!status.error || status.result?.can_submit !== true;
-  });
-
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSubmitMessage('');
 
-    if (!avatar) {
-      setSubmitMessage('Vui lòng tải lên ảnh chân dung.');
-      showToast('Vui lòng tải lên ảnh chân dung.', 'error');
-      return;
-    }
-
-    if (duplicateWarnings.length > 0) {
-      setSubmitMessage('Có ảnh gần như trùng nhau. Vui lòng kiểm tra lại trước khi gửi hồ sơ.');
-      showToast('Có ảnh gần như trùng nhau. Vui lòng kiểm tra lại trước khi gửi hồ sơ.', 'error');
-      return;
-    }
-
     if (teachingLevels.length === 0) {
       setSubmitMessage('Vui lòng chọn ít nhất một đối tượng giảng dạy.');
       showToast('Vui lòng chọn ít nhất một đối tượng giảng dạy.', 'error');
-      return;
-    }
-
-    if (hasBlockingPrecheck) {
-      setSubmitMessage('Vui lòng chờ AI precheck hoàn tất và chỉ submit khi tất cả ảnh đạt yêu cầu.');
-      showToast('Vui lòng chờ AI precheck hoàn tất và chỉ submit khi tất cả ảnh đạt yêu cầu.', 'error');
       return;
     }
 
@@ -361,7 +279,7 @@ const TutorRegister: React.FC = () => {
               >
                 <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={(e) => handleFileChange(e, 'avatar')} />
                 {avatar ? (
-                  <FilePreview file={avatar} onRemove={() => { setAvatar(null); clearPrecheck('avatar'); }} cover />
+                  <FilePreview file={avatar} onRemove={() => setAvatar(null)} cover />
                 ) : (
                   <div className="px-4">
                     <ImageIcon />
@@ -371,7 +289,6 @@ const TutorRegister: React.FC = () => {
               </button>
               <div>
                 <p className="font-bold text-gray-900">Ảnh chân dung gia sư</p>
-                <PrecheckMessage status={prechecks.avatar} />
               </div>
             </div>
 
@@ -459,7 +376,7 @@ const TutorRegister: React.FC = () => {
             <div className="space-y-8">
               {duplicateWarnings.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
-                  <p className="font-extrabold">AI precheck phát hiện ảnh gần như trùng nhau</p>
+                  <p className="font-extrabold">Phát hiện ảnh gần như trùng nhau</p>
                   {duplicateWarnings.slice(0, 3).map((warning) => (
                     <p key={warning} className="mt-1">{warning}</p>
                   ))}
@@ -474,7 +391,6 @@ const TutorRegister: React.FC = () => {
                       <div className="aspect-square">
                       <FilePreview file={file} onRemove={() => removeAchievement(index)} />
                       </div>
-                      <PrecheckMessage status={prechecks[fileKey(file)]} compact />
                     </div>
                   ))}
                   <button type="button" onClick={() => achievementRef.current?.click()} className="aspect-square border-2 border-dashed border-indigo-100 rounded-xl flex flex-col items-center justify-center text-center hover:bg-indigo-50/50 transition-all">
@@ -538,7 +454,7 @@ const TutorRegister: React.FC = () => {
 
             <div className="mt-10 flex flex-col sm:flex-row sm:items-center sm:justify-end gap-4 pt-6 border-t border-gray-100">
               {submitMessage && <p className="text-sm font-semibold text-slate-600">{submitMessage}</p>}
-              <button type="submit" disabled={isSubmitting || hasBlockingPrecheck} className="px-10 py-3 rounded-xl bg-[#3b38c2] hover:bg-[#312e81] text-white text-base font-bold shadow-md hover:shadow-lg transition-all disabled:opacity-60">
+              <button type="submit" disabled={isSubmitting} className="px-10 py-3 rounded-xl bg-[#3b38c2] hover:bg-[#312e81] text-white text-base font-bold shadow-md hover:shadow-lg transition-all disabled:opacity-60">
                 {isSubmitting ? 'Đang gửi...' : 'Hoàn tất đăng ký'}
               </button>
             </div>
@@ -676,40 +592,6 @@ const FilePreview = ({ file, onRemove, cover = false }: { file: File; onRemove: 
     </div>
   </div>
 );
-
-const PrecheckMessage = ({ status, compact = false }: { status?: ImagePrecheckStatus; compact?: boolean }) => {
-  if (!status) return null;
-  if (status.isChecking) {
-    return <p className={`${compact ? 'mt-2 text-[11px]' : 'mt-3 text-xs'} font-bold text-blue-600`}>Đang kiểm tra ảnh...</p>;
-  }
-  if (status.error) {
-    return <p className={`${compact ? 'mt-2 text-[11px]' : 'mt-3 text-xs'} font-bold text-amber-600`}>{status.error}</p>;
-  }
-  if (!status.result) return null;
-
-  const tone = status.result.is_valid
-    ? 'text-emerald-600'
-    : status.result.can_submit
-      ? 'text-amber-600'
-      : 'text-rose-600';
-  const label = status.result.is_valid
-    ? 'Ảnh đạt yêu cầu'
-    : status.result.can_submit
-      ? 'Ảnh có cảnh báo'
-      : 'Ảnh không đạt, vui lòng upload lại';
-
-  return (
-    <div className={`${compact ? 'mt-2 text-[11px]' : 'mt-3 text-xs'} font-semibold ${tone}`}>
-      <p className="font-extrabold">{label} ({status.result.score}/100)</p>
-      {status.result.issues.slice(0, compact ? 1 : 2).map((issue) => (
-        <p key={issue} className="mt-1 leading-snug">{issue}</p>
-      ))}
-      {!compact && status.result.suggestions.slice(0, 2).map((suggestion) => (
-        <p key={suggestion} className="mt-1 leading-snug text-gray-500">{suggestion}</p>
-      ))}
-    </div>
-  );
-};
 
 const SectionTitle = ({ index, title, required, helper }: any) => (
   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">

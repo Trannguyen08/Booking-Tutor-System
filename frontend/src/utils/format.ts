@@ -20,3 +20,14 @@ export const formatPhoneNumber = (phone: string) => {
   }
   return phone;
 };
+
+export const formatNumberInput = (value: string | number | null | undefined): string => {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (!digits) return '';
+  return Number(digits).toLocaleString('vi-VN');
+};
+
+export const parseMoneyInput = (value: string | number | null | undefined): number => {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return digits ? Number(digits) : 0;
+};

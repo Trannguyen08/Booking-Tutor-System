@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { adminApi } from '../../api/admin';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 
 const toArray = (data: any) => {
@@ -47,7 +48,7 @@ const Badge = ({ value, tone = 'slate' }: { value: string; tone?: string }) => {
     amber: 'border-amber-200 bg-amber-50 text-amber-700',
     rose: 'border-rose-200 bg-rose-50 text-rose-700',
   };
-  return <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
+  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
 };
 
 const Toolbar = ({ children }: { children: React.ReactNode }) => (
@@ -74,25 +75,44 @@ export const ReviewManagement: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [maxRating, setMaxRating] = useState('');
+  const [page, setPage] = useState(1);
   const { showToast } = useToast();
-  const load = () => adminApi.getReviews({ search: search || undefined, max_rating: maxRating || undefined }).then(data => setItems(toArray(data)));
-  useEffect(() => { load(); }, [search, maxRating]);
+  const load = () => adminApi.getReviews({ search: search || undefined, max_rating: maxRating || undefined }).then(data => setItems(toArray(data))).catch(() => setItems([]));
+  useEffect(() => { setPage(1); load(); }, [search, maxRating]);
+  const pagedReviews = useClientPagination(items, page, 10);
   const remove = async (id: number) => {
-    await adminApi.reviewAction(id, 'delete');
-    showToast('Đã xóa đánh giá khỏi hồ sơ gia sư.', 'success');
-    load();
+    try {
+      await adminApi.reviewAction(id, 'delete');
+      showToast('Đã xóa đánh giá khỏi hồ sơ gia sư.', 'success');
+      load();
+    } catch {
+      showToast('Không thể xóa đánh giá.', 'error');
+    }
   };
   return (
     <div className="space-y-6">
       <PageTitle icon={Star} title="Kiểm duyệt đánh giá" subtitle="Lọc review thấp, kiểm tra nội dung và gỡ đánh giá không phù hợp." />
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <Toolbar><SearchInput value={search} onChange={setSearch} placeholder="Tìm nội dung, học viên, gia sư, khóa học..." /><Select value={maxRating} onChange={(e: any) => setMaxRating(e.target.value)}><option value="">Mọi sao</option><option value="2">Từ 2 sao trở xuống</option><option value="3">Từ 3 sao trở xuống</option></Select><div /><div /></Toolbar>
-        <div className="divide-y divide-slate-100">{items.map(item => (
-          <div key={item.id} className="flex flex-col gap-3 p-5 lg:flex-row lg:items-start lg:justify-between">
-            <div><p className="font-black text-slate-900">{item.course_title}</p><p className="mt-1 text-sm text-slate-600">{item.comment}</p><p className="mt-2 text-xs font-semibold text-slate-400">{item.student_name} đánh giá {item.tutor_name} · {formatDate(item.created_at)}</p></div>
-            <div className="flex shrink-0 items-center gap-2"><Badge value={`${item.rating}/5`} tone={item.rating <= 2 ? 'rose' : 'amber'} /><button onClick={() => remove(item.id)} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><XCircle className="h-4 w-4" /></button></div>
-          </div>
-        ))}</div>
+        <div className="divide-y divide-slate-100">
+          {pagedReviews.pagedItems.length === 0 ? (
+            <div className="p-12 text-center font-semibold text-slate-400">Không có đánh giá phù hợp.</div>
+          ) : pagedReviews.pagedItems.map(item => (
+            <div key={item.id} className="flex flex-col gap-3 p-5 lg:flex-row lg:items-start lg:justify-between">
+              <div><p className="font-black text-slate-900">{item.course_title}</p><p className="mt-1 text-sm text-slate-600">{item.comment}</p><p className="mt-2 text-xs font-semibold text-slate-400">{item.student_name} đánh giá {item.tutor_name} · {formatDate(item.created_at)}</p></div>
+              <div className="flex shrink-0 items-center gap-2"><Badge value={`${item.rating}/5`} tone={item.rating <= 2 ? 'rose' : 'amber'} /><button onClick={() => remove(item.id)} className="rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600"><XCircle className="h-4 w-4" /></button></div>
+            </div>
+          ))}
+        </div>
+        <div className="px-5 pb-4">
+          <Pagination
+            currentPage={pagedReviews.currentPage}
+            totalCount={pagedReviews.totalCount}
+            pageSize={pagedReviews.pageSize}
+            totalPages={pagedReviews.totalPages}
+            onPageChange={setPage}
+          />
+        </div>
       </section>
     </div>
   );

@@ -140,9 +140,12 @@ class TutorBookingsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        cached = get_cached_response("bookings", request, "tutor-bookings")
-        if cached is not None:
-            return Response(cached)
+        from core.pagination import paginate_if_requested
+
+        if request.query_params.get("page") is None:
+            cached = get_cached_response("bookings", request, "tutor-bookings")
+            if cached is not None:
+                return Response(cached)
         if not request.user.is_tutor:
             return Response(
                 {"error": "Only tutors can access this"},
@@ -150,29 +153,40 @@ class TutorBookingsView(APIView):
             )
 
         tutor_profile = get_tutor_profile(request.user)
-        bookings = Booking.objects.filter(tutor=tutor_profile).order_by(
-            "-start_time"
+        bookings = (
+            Booking.objects.filter(tutor=tutor_profile)
+            .select_related("student", "subject", "teaching_slot")
+            .order_by("-start_time")
         )
-        serializer = BookingSerializer(bookings, many=True, context={"request": request})
-        set_cached_response("bookings", serializer.data, request, "tutor-bookings")
-        return Response(serializer.data)
+        payload = paginate_if_requested(
+            request, bookings, BookingSerializer, serializer_context={"request": request}
+        )
+        if request.query_params.get("page") is None:
+            set_cached_response("bookings", payload, request, "tutor-bookings")
+        return Response(payload)
 
 
 class StudentBookingHistoryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        cached = get_cached_response("bookings", request, "student-history")
-        if cached is not None:
-            return Response(cached)
+        from core.pagination import paginate_if_requested
+
+        if request.query_params.get("page") is None:
+            cached = get_cached_response("bookings", request, "student-history")
+            if cached is not None:
+                return Response(cached)
         bookings = (
             Booking.objects.filter(student=request.user)
             .select_related("tutor", "subject", "teaching_slot")
             .order_by("-created_at")
         )
-        serializer = BookingSerializer(bookings, many=True, context={"request": request})
-        set_cached_response("bookings", serializer.data, request, "student-history")
-        return Response(serializer.data)
+        payload = paginate_if_requested(
+            request, bookings, BookingSerializer, serializer_context={"request": request}
+        )
+        if request.query_params.get("page") is None:
+            set_cached_response("bookings", payload, request, "student-history")
+        return Response(payload)
 
 
 class TutorBookingDecisionView(APIView):
@@ -294,7 +308,9 @@ class TutorStudentsView(APIView):
                 "paid_at": booking.paid_at,
             }
 
-        return Response(list(students.values()))
+        from core.pagination import paginate_if_requested
+
+        return Response(paginate_if_requested(request, list(students.values())))
 
 
 class TutorTeachingSlotListCreateView(APIView):

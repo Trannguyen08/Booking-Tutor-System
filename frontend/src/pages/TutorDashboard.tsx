@@ -11,11 +11,14 @@ import {
   Send,
   ShieldCheck,
   Star,
+  Upload,
   Users,
   Wallet,
 } from 'lucide-react';
 import { bookingsApi } from '../api/bookings';
+import client from '../api/client';
 import { coursesApi } from '../api/courses';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 import { useToast } from '../components/ui/Toast';
 import { tutorService } from '../services/tutorService';
 
@@ -107,6 +110,13 @@ const transactionLabels: Record<string, string> = {
   deposit_release: 'Nhận cọc còn lại',
 };
 
+const payoutStatusLabels: Record<string, string> = {
+  pending: 'Chờ duyệt',
+  approved: 'Đã duyệt',
+  rejected: 'Từ chối',
+  paid: 'Đã chuyển',
+};
+
 const asArray = (value: any) => {
   if (Array.isArray(value)) return value;
   if (Array.isArray(value?.courses)) return value.courses;
@@ -142,6 +152,9 @@ const TutorDashboard: React.FC = () => {
   const [policies, setPolicies] = useState<any[]>([]);
   const [courses, setCourses] = useState<any[]>([]);
   const [payoutRequests, setPayoutRequests] = useState<any[]>([]);
+  const [payoutPage, setPayoutPage] = useState(1);
+  const [payoutQrFile, setPayoutQrFile] = useState<File | null>(null);
+  const [savedBankQrUrl, setSavedBankQrUrl] = useState('');
   const [payoutForm, setPayoutForm] = useState({
     request_type: 'course_deposit_release',
     course: '',
@@ -150,6 +163,8 @@ const TutorDashboard: React.FC = () => {
     note: '',
   });
   const [submittingPayout, setSubmittingPayout] = useState(false);
+
+  const pagedPayouts = useClientPagination(payoutRequests, payoutPage, 10);
 
   const fetchDashboard = async () => {
     const data = await tutorService.getDashboard();
@@ -165,14 +180,24 @@ const TutorDashboard: React.FC = () => {
   };
 
   const fetchPayoutContext = async () => {
-    const [policyData, courseData, payoutData] = await Promise.all([
+    const [policyData, courseData, payoutData, meData] = await Promise.all([
       bookingsApi.getPolicies().catch(() => []),
       coursesApi.getTutorCourses().catch(() => []),
       tutorService.getPayoutRequests().catch(() => []),
+      client.get('/auth/me/').then((res) => res.data).catch(() => null),
     ]);
     setPolicies(policyData);
     setCourses(asArray(courseData));
     setPayoutRequests(asArray(payoutData));
+    if (meData) {
+      const bankSummary = [meData.bank_name, meData.bank_account_number, meData.bank_account_holder].filter(Boolean).join(' - ');
+      if (bankSummary) {
+        setPayoutForm((prev) => ({ ...prev, bank_info: prev.bank_info || bankSummary }));
+      }
+      if (meData.bank_qr_url) {
+        setSavedBankQrUrl(meData.bank_qr_url);
+      }
+    }
   };
 
   const refreshAll = async () => {
@@ -245,8 +270,8 @@ const TutorDashboard: React.FC = () => {
   };
 
   const submitPayoutRequest = async () => {
-    if (!payoutForm.bank_info.trim() && !payoutForm.qr_code_url.trim()) {
-      showToast('Nhập thông tin ngân hàng hoặc link mã QR để admin chuyển tiền.', 'error');
+    if (!payoutForm.bank_info.trim() && !payoutForm.qr_code_url.trim() && !payoutQrFile && !savedBankQrUrl) {
+      showToast('Nhập thông tin ngân hàng hoặc tải ảnh mã QR để admin chuyển tiền.', 'error');
       return;
     }
     if (payoutForm.request_type === 'course_deposit_release' && !payoutForm.course) {
@@ -255,17 +280,23 @@ const TutorDashboard: React.FC = () => {
     }
     setSubmittingPayout(true);
     try {
-      await tutorService.createPayoutRequest({
-        ...payoutForm,
-        course: payoutForm.course ? Number(payoutForm.course) : undefined,
-      });
-      setPayoutForm({
+      const fd = new FormData();
+      fd.append('request_type', payoutForm.request_type);
+      if (payoutForm.course) fd.append('course', String(Number(payoutForm.course)));
+      if (payoutForm.bank_info.trim()) fd.append('bank_info', payoutForm.bank_info.trim());
+      if (payoutForm.qr_code_url.trim()) fd.append('qr_code_url', payoutForm.qr_code_url.trim());
+      if (payoutForm.note.trim()) fd.append('note', payoutForm.note.trim());
+      if (payoutQrFile) fd.append('qr_image', payoutQrFile);
+
+      await tutorService.createPayoutRequest(fd);
+      setPayoutQrFile(null);
+      setPayoutForm((prev) => ({
         request_type: 'course_deposit_release',
         course: '',
-        bank_info: '',
+        bank_info: prev.bank_info,
         qr_code_url: '',
         note: '',
-      });
+      }));
       await fetchPayoutContext();
       showToast('Đã gửi yêu cầu cho admin.', 'success');
     } catch (error: any) {
@@ -527,12 +558,31 @@ const TutorDashboard: React.FC = () => {
               placeholder="Tên ngân hàng, số tài khoản, chủ tài khoản"
               className="w-full resize-none rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none"
             />
-            <input
-              value={payoutForm.qr_code_url}
-              onChange={(event) => setPayoutForm({ ...payoutForm, qr_code_url: event.target.value })}
-              placeholder="Link mã QR chuyển khoản nếu có"
-              className="w-full rounded-xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none"
-            />
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-xs font-black text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-50">
+                  <Upload className="h-3.5 w-3.5" />
+                  {payoutQrFile ? payoutQrFile.name : 'Tải ảnh mã QR ngân hàng'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => setPayoutQrFile(event.target.files?.[0] || null)}
+                  />
+                </label>
+                {savedBankQrUrl && !payoutQrFile && (
+                  <a href={savedBankQrUrl} target="_blank" rel="noreferrer" className="text-xs font-bold text-emerald-700 underline">
+                    Dùng QR đã lưu trong hồ sơ
+                  </a>
+                )}
+              </div>
+              <input
+                value={payoutForm.qr_code_url}
+                onChange={(event) => setPayoutForm({ ...payoutForm, qr_code_url: event.target.value })}
+                placeholder="Hoặc dán link mã QR chuyển khoản (tùy chọn)"
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold outline-none"
+              />
+            </div>
             <input
               value={payoutForm.note}
               onChange={(event) => setPayoutForm({ ...payoutForm, note: event.target.value })}
@@ -548,15 +598,39 @@ const TutorDashboard: React.FC = () => {
             </button>
           </div>
           <div className="mt-5 space-y-2">
-            {payoutRequests.slice(0, 4).map((item) => (
+            {pagedPayouts.pagedItems.map((item) => (
               <div key={item.id} className="rounded-2xl bg-slate-50 p-3 text-sm">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-black text-slate-900">{item.request_type === 'platform_exit' ? 'Rút khỏi nền tảng' : 'Nhận cọc còn lại'}</p>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-indigo-700">{item.status}</span>
+                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-indigo-700">
+                    {payoutStatusLabels[item.status] || item.status}
+                  </span>
                 </div>
-                <p className="mt-1 text-xs font-semibold text-slate-500">{formatMoney(item.amount)} {item.course_title ? `- ${item.course_title}` : ''}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {formatMoney(item.amount)} {item.course_title ? `- ${item.course_title}` : ''}
+                </p>
+                {(item.tutor_bank_info || item.bank_info) && (
+                  <p className="mt-1 text-xs font-medium text-slate-500">NH: {item.tutor_bank_info || item.bank_info}</p>
+                )}
+                {(item.qr_image_url || item.qr_code_url) && (
+                  <a
+                    href={item.qr_image_url || item.qr_code_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1 inline-block text-xs font-bold text-indigo-600 underline"
+                  >
+                    Xem ảnh mã QR đã gửi
+                  </a>
+                )}
               </div>
             ))}
+            <Pagination
+              currentPage={pagedPayouts.currentPage}
+              totalCount={pagedPayouts.totalCount}
+              pageSize={pagedPayouts.pageSize}
+              totalPages={pagedPayouts.totalPages}
+              onPageChange={setPayoutPage}
+            />
           </div>
         </section>
       </div>

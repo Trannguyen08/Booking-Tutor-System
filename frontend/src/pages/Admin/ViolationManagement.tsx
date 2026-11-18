@@ -70,37 +70,59 @@ const Select = (props: any) => (
   <select {...props} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none" />
 );
 
+const violationStatusLabels: Record<string, string> = {
+  open: 'Mở',
+  investigating: 'Đang xử lý',
+  resolved: 'Đã xử lý',
+  dismissed: 'Bỏ qua',
+};
+
+const violationSeverityLabels: Record<string, string> = {
+  low: 'Thấp',
+  medium: 'Trung bình',
+  high: 'Cao',
+  critical: 'Nghiêm trọng',
+};
+
 export const ViolationManagement: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
   const { showToast } = useToast();
-  const load = () => adminApi.getViolations({ search: search || undefined, status }).then(data => setItems(toArray(data)));
+  const load = () => adminApi.getViolations({ search: search || undefined, status }).then(data => setItems(toArray(data))).catch(() => setItems([]));
   useEffect(() => { load(); }, [search, status]);
   const action = async (id: number, actionName: string) => {
-    await adminApi.violationAction(id, actionName);
-    showToast('Đã cập nhật hồ sơ vi phạm.', 'success');
-    load();
+    try {
+      await adminApi.violationAction(id, actionName);
+      showToast('Đã cập nhật hồ sơ vi phạm.', 'success');
+      load();
+    } catch (error: any) {
+      showToast(error.response?.data?.error || 'Thao tác thất bại.', 'error');
+    }
   };
   return (
     <div className="space-y-6">
       <PageTitle icon={ShieldAlert} title="Vi phạm và tranh chấp" subtitle="Theo dõi khiếu nại, mức độ rủi ro và thao tác khóa/mở khóa người dùng liên quan." />
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <Toolbar><SearchInput value={search} onChange={setSearch} placeholder="Tìm tiêu đề, nội dung, email..." /><Select value={status} onChange={(e: any) => setStatus(e.target.value)}><option value="all">Mọi trạng thái</option><option value="open">Mở</option><option value="investigating">Đang xử lý</option><option value="resolved">Đã xử lý</option><option value="dismissed">Bỏ qua</option></Select><div /><div /></Toolbar>
-        <div className="divide-y divide-slate-100">{items.map(item => (
-          <div key={item.id} className="p-5">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div><p className="font-black text-slate-900">{item.title}</p><p className="mt-1 text-sm text-slate-600">{item.description || 'Chưa có mô tả.'}</p><p className="mt-2 text-xs font-semibold text-slate-400">Đối tượng: {item.target_user_name || item.target_user_email || '---'} · {item.booking_label || item.course_title || 'Không gắn hồ sơ'}</p></div>
-              <div className="flex shrink-0 flex-wrap gap-2"><Badge value={item.severity} tone={item.severity === 'critical' || item.severity === 'high' ? 'rose' : 'amber'} /><Badge value={item.status} tone={item.status === 'resolved' ? 'green' : 'blue'} /></div>
+        <div className="divide-y divide-slate-100">
+          {items.length === 0 ? (
+            <div className="p-12 text-center font-semibold text-slate-400">Không có hồ sơ vi phạm phù hợp.</div>
+          ) : items.map(item => (
+            <div key={item.id} className="p-5">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div><p className="font-black text-slate-900">{item.title}</p><p className="mt-1 text-sm text-slate-600">{item.description || 'Chưa có mô tả.'}</p><p className="mt-2 text-xs font-semibold text-slate-400">Đối tượng: {item.target_user_name || item.target_user_email || '---'} · {item.booking_label || item.course_title || 'Không gắn hồ sơ'}</p></div>
+                <div className="flex shrink-0 flex-wrap gap-2"><Badge value={violationSeverityLabels[item.severity] || item.severity} tone={item.severity === 'critical' || item.severity === 'high' ? 'rose' : 'amber'} /><Badge value={violationStatusLabels[item.status] || item.status} tone={item.status === 'resolved' ? 'green' : 'blue'} /></div>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button onClick={() => action(item.id, 'investigating')} className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">Đang xử lý</button>
+                <button onClick={() => action(item.id, 'resolved')} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">Đã xử lý</button>
+                <button onClick={() => action(item.id, 'lock_user')} className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700">Khóa user</button>
+                <button onClick={() => action(item.id, 'unlock_user')} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">Mở khóa</button>
+              </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={() => action(item.id, 'investigating')} className="rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">Đang xử lý</button>
-              <button onClick={() => action(item.id, 'resolved')} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700">Đã xử lý</button>
-              <button onClick={() => action(item.id, 'lock_user')} className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-700">Khóa user</button>
-              <button onClick={() => action(item.id, 'unlock_user')} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">Mở khóa</button>
-            </div>
-          </div>
-        ))}</div>
+          ))}
+        </div>
       </section>
     </div>
   );

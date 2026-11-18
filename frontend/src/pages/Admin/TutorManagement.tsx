@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { BrainCircuit, CheckCircle2, CreditCard, Download, Eye, FileText, Loader2, Search, ShieldAlert, TriangleAlert, X } from 'lucide-react';
+import { CheckCircle2, CreditCard, Download, Eye, FileText, Search, ShieldAlert, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { adminApi } from '../../api/admin';
 import { useAdminStore } from '../../store/useAdminStore';
 import { formatDate } from '../../utils/format';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 
 type TutorManagementProps = {
@@ -25,31 +26,6 @@ const statusLabel: Record<string, string> = {
   LOCKED: 'Bị khóa',
 };
 
-const aiStatusLabel: Record<string, string> = {
-  PENDING: 'Chờ AI kiểm tra',
-  PROCESSING: 'AI đang kiểm tra',
-  COMPLETED: 'Đã có AI review',
-  FAILED: 'AI review lỗi',
-};
-
-const aiRiskLabel: Record<string, string> = {
-  LOW: 'Rủi ro thấp',
-  MEDIUM: 'Cần xem kỹ',
-  HIGH: 'Rủi ro cao',
-};
-
-const aiRiskClass: Record<string, string> = {
-  LOW: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  MEDIUM: 'border-amber-200 bg-amber-50 text-amber-700',
-  HIGH: 'border-rose-200 bg-rose-50 text-rose-700',
-};
-
-const toTextList = (value: any) => {
-  if (Array.isArray(value)) return value.filter(Boolean).map(String);
-  if (typeof value === 'string' && value.trim()) return [value.trim()];
-  return [];
-};
-
 const StatusBadge = ({ tutor }: { tutor: any }) => {
   const status = tutor.registration_status || tutor.status || 'PENDING';
   const isLocked = tutor.user && tutor.user.is_active === false;
@@ -64,139 +40,9 @@ const StatusBadge = ({ tutor }: { tutor: any }) => {
           : 'bg-slate-100 text-slate-700 border-slate-200';
 
   return (
-    <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${className}`}>
+    <span className={`inline-flex whitespace-nowrap px-2.5 py-1 rounded-full text-xs font-bold border ${className}`}>
       {statusLabel[effectiveStatus] || effectiveStatus}
     </span>
-  );
-};
-
-const AIReviewBadge = ({ review }: { review?: any }) => {
-  if (!review) {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-500">
-        <BrainCircuit className="h-3.5 w-3.5" />
-        Chưa có AI
-      </span>
-    );
-  }
-
-  if (review.status === 'PENDING' || review.status === 'PROCESSING') {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        {aiStatusLabel[review.status] || review.status}
-      </span>
-    );
-  }
-
-  if (review.status === 'FAILED') {
-    return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700">
-        <TriangleAlert className="h-3.5 w-3.5" />
-        AI lỗi
-      </span>
-    );
-  }
-
-  const score = Number(review.pass_score || 0);
-  const className =
-    score >= 80
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-      : score >= 60
-        ? 'border-amber-200 bg-amber-50 text-amber-700'
-        : 'border-rose-200 bg-rose-50 text-rose-700';
-
-  return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold ${className}`}>
-      <BrainCircuit className="h-3.5 w-3.5" />
-      AI {score}/100
-    </span>
-  );
-};
-
-const AIReviewPanel = ({ review }: { review?: any }) => {
-  const goodPoints = toTextList(review?.good_points);
-  const badPoints = toTextList(review?.bad_points);
-  const missingFields = toTextList(review?.missing_fields);
-  const warningFlags = toTextList(review?.warning_flags);
-  const score = Number(review?.pass_score || 0);
-
-  return (
-    <div className="rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-indigo-700">
-            <BrainCircuit className="h-5 w-5" />
-            <h4 className="text-sm font-extrabold uppercase tracking-widest">AI review hồ sơ</h4>
-          </div>
-          <p className="mt-2 text-sm font-semibold text-slate-600">
-            {review ? aiStatusLabel[review.status] || review.status : 'Chưa có bản AI review cho hồ sơ này.'}
-          </p>
-        </div>
-        <AIReviewBadge review={review} />
-      </div>
-
-      {!review ? (
-        <div className="mt-4 rounded-xl border border-dashed border-indigo-200 bg-white/70 p-4 text-sm font-semibold text-slate-500">
-          Hồ sơ cũ có thể chưa được tạo review tự động.
-        </div>
-      ) : review.status === 'FAILED' ? (
-        <div className="mt-4 rounded-xl border border-rose-100 bg-white p-4 text-sm font-semibold text-rose-600">
-          {review.error_message || 'AI review không hoàn tất. Vui lòng kiểm tra hồ sơ thủ công trước khi duyệt.'}
-        </div>
-      ) : review.status === 'PENDING' || review.status === 'PROCESSING' ? (
-        <div className="mt-4 rounded-xl border border-blue-100 bg-white p-4 text-sm font-semibold text-blue-700">
-          AI đang xử lý hồ sơ. Nên đợi kết quả trước khi bấm duyệt.
-        </div>
-      ) : (
-        <div className="mt-4 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl bg-white p-3">
-              <p className="text-xs font-bold text-slate-400">Điểm pass</p>
-              <p className="mt-1 text-2xl font-black text-slate-900">{score}/100</p>
-            </div>
-            <div className="rounded-xl bg-white p-3">
-              <p className="text-xs font-bold text-slate-400">Mức rủi ro</p>
-              <span className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-extrabold ${aiRiskClass[review.risk_level] || aiRiskClass.HIGH}`}>
-                {aiRiskLabel[review.risk_level] || review.risk_level || '---'}
-              </span>
-            </div>
-            <div className="rounded-xl bg-white p-3">
-              <p className="text-xs font-bold text-slate-400">Gợi ý</p>
-              <p className="mt-1 text-sm font-extrabold text-slate-800">{review.admin_suggestion || 'Không có ghi chú.'}</p>
-            </div>
-          </div>
-
-          {(warningFlags.length > 0 || badPoints.length > 0 || missingFields.length > 0) && (
-            <div className="rounded-xl border border-amber-100 bg-white p-4">
-              <div className="mb-2 flex items-center gap-2 text-amber-700">
-                <TriangleAlert className="h-4 w-4" />
-                <p className="text-sm font-extrabold">Điểm cần admin xem kỹ</p>
-              </div>
-              <ul className="space-y-1 text-sm font-semibold text-slate-700">
-                {[...warningFlags, ...badPoints, ...missingFields].slice(0, 6).map((item, index) => (
-                  <li key={`${item}-${index}`}>- {item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {goodPoints.length > 0 && (
-            <div className="rounded-xl border border-emerald-100 bg-white p-4">
-              <div className="mb-2 flex items-center gap-2 text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" />
-                <p className="text-sm font-extrabold">Điểm đạt</p>
-              </div>
-              <ul className="space-y-1 text-sm font-semibold text-slate-700">
-                {goodPoints.slice(0, 5).map((item, index) => (
-                  <li key={`${item}-${index}`}>- {item}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
   );
 };
 
@@ -217,6 +63,7 @@ const TutorProfileModal = ({
   onApprove,
   onReject,
   onLock,
+  onUnlock,
   onDeductCommission,
 }: {
   tutor: any;
@@ -225,6 +72,7 @@ const TutorProfileModal = ({
   onApprove: () => void;
   onReject: () => void;
   onLock: () => void;
+  onUnlock: () => void;
   onDeductCommission: () => void;
 }) => {
   const avatarUrl = tutor.avatar_url || tutor.user?.avatar_url || '';
@@ -246,7 +94,9 @@ const TutorProfileModal = ({
   const identityDocuments = [
     ['CCCD mặt trước', tutor.id_front_url],
     ['CCCD mặt sau', tutor.id_back_url],
-  ];
+  ].filter(([, url]) => Boolean(url));
+  const hasCccdInfo = Boolean(tutor.cccd_number || identityDocuments.length > 0);
+  const isLocked = tutor.user?.is_active === false;
 
   const renderMediaCard = (label: string, url?: string) => (
     <a
@@ -326,7 +176,7 @@ const TutorProfileModal = ({
               <div className="mt-5 divide-y divide-slate-100">
                 <DetailRow label="Email" value={tutor.user?.email || tutor.user_email || '---'} />
                 <DetailRow label="Số điện thoại" value={tutor.user?.phone || '---'} />
-                <DetailRow label="Số CCCD" value={tutor.cccd_number || '---'} />
+                {tutor.cccd_number && <DetailRow label="Số CCCD" value={tutor.cccd_number} />}
                 <DetailRow label="Ngày sinh" value={tutor.birthday ? formatDate(tutor.birthday) : '---'} />
                 <DetailRow label="Trình độ" value={tutor.qualification || '---'} />
                 <DetailRow label="Trường đại học" value={tutor.university || '---'} />
@@ -340,8 +190,6 @@ const TutorProfileModal = ({
 
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
               <div className="space-y-6">
-                {mode === 'approval' && <AIReviewPanel review={tutor.latest_ai_review} />}
-
                 {mode === 'management' && (
                   <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -410,12 +258,14 @@ const TutorProfileModal = ({
                   )}
                 </div>
 
-                <div>
-                  <h4 className="mb-3 text-sm font-extrabold uppercase tracking-widest text-slate-500">Căn cước</h4>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {identityDocuments.map(([label, url]) => renderMediaCard(label as string, url as string))}
+                {hasCccdInfo && identityDocuments.length > 0 && (
+                  <div>
+                    <h4 className="mb-3 text-sm font-extrabold uppercase tracking-widest text-slate-500">Căn cước (hồ sơ cũ)</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {identityDocuments.map(([label, url]) => renderMediaCard(label as string, url as string))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div>
                   <h4 className="mb-3 text-sm font-extrabold uppercase tracking-widest text-slate-500">
@@ -462,6 +312,10 @@ const TutorProfileModal = ({
                 Duyệt hồ sơ
               </button>
             </>
+          ) : isLocked ? (
+            <button onClick={onUnlock} className="rounded-xl bg-emerald-600 px-8 py-3 font-extrabold text-white hover:bg-emerald-700">
+              Mở khóa tài khoản
+            </button>
           ) : (
             <button onClick={onLock} className="rounded-xl bg-rose-600 px-8 py-3 font-extrabold text-white hover:bg-rose-700">
               Khóa tài khoản
@@ -481,6 +335,7 @@ const TutorManagement: React.FC<TutorManagementProps> = ({ mode = 'management' }
   const [isLockModalOpen, setIsLockModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     fetchTutors(mode === 'approval' ? { status: 'PENDING' } : undefined);
@@ -520,6 +375,12 @@ const TutorManagement: React.FC<TutorManagementProps> = ({ mode = 'management' }
       });
   }, [mode, searchTerm, statusFilter, tutors]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [mode, searchTerm, statusFilter]);
+
+  const pagedTutors = useClientPagination(filteredTutors, page, 10);
+
   const handleTutorAction = async (id: number, action: string, data?: any) => {
     try {
       await tutorAction(id, action, data);
@@ -530,6 +391,7 @@ const TutorManagement: React.FC<TutorManagementProps> = ({ mode = 'management' }
         approve: 'Đã duyệt hồ sơ gia sư.',
         reject: 'Đã từ chối hồ sơ gia sư.',
         lock: 'Đã khóa tài khoản gia sư.',
+        unlock: 'Đã mở khóa tài khoản gia sư.',
       };
       showToast(labels[action] || 'Thao tác thành công.', 'success');
       await fetchTutors(mode === 'approval' ? { status: 'PENDING' } : undefined);
@@ -619,14 +481,14 @@ const TutorManagement: React.FC<TutorManagementProps> = ({ mode = 'management' }
                     Đang tải dữ liệu...
                   </td>
                 </tr>
-              ) : filteredTutors.length === 0 ? (
+              ) : pagedTutors.pagedItems.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-12 text-center font-semibold text-slate-400">
                     Không có hồ sơ phù hợp.
                   </td>
                 </tr>
               ) : (
-                filteredTutors.map((tutor) => (
+                pagedTutors.pagedItems.map((tutor) => (
                   <tr key={tutor.id} className="cursor-pointer hover:bg-blue-50/30" onClick={() => setSelectedTutor(tutor)}>
                     <td className="px-6 py-4">
                       <div className="font-extrabold text-slate-900">{tutor.full_name}</div>
@@ -644,11 +506,6 @@ const TutorManagement: React.FC<TutorManagementProps> = ({ mode = 'management' }
                     <td className="px-6 py-4 text-sm font-semibold text-slate-600">{formatDate(tutor.created_at)}</td>
                     <td className="px-6 py-4">
                       <StatusBadge tutor={tutor} />
-                      {mode === 'approval' && (
-                        <div className="mt-2">
-                          <AIReviewBadge review={tutor.latest_ai_review} />
-                        </div>
-                      )}
                     </td>
                     <td className="px-6 py-4 text-right">
                       <button
@@ -667,6 +524,15 @@ const TutorManagement: React.FC<TutorManagementProps> = ({ mode = 'management' }
             </tbody>
           </table>
         </div>
+        <div className="px-6 pb-4">
+          <Pagination
+            currentPage={pagedTutors.currentPage}
+            totalCount={pagedTutors.totalCount}
+            pageSize={pagedTutors.pageSize}
+            totalPages={pagedTutors.totalPages}
+            onPageChange={setPage}
+          />
+        </div>
       </div>
 
       <AnimatePresence>
@@ -678,6 +544,7 @@ const TutorManagement: React.FC<TutorManagementProps> = ({ mode = 'management' }
             onApprove={() => handleTutorAction(selectedTutor.id, 'approve')}
             onReject={() => handleTutorAction(selectedTutor.id, 'reject')}
             onLock={() => setIsLockModalOpen(true)}
+            onUnlock={() => handleTutorAction(selectedTutor.id, 'unlock')}
             onDeductCommission={() => deductCommissionFromDeposit(selectedTutor)}
           />
         )}

@@ -12,6 +12,11 @@ class CustomUser(AbstractUser):
     avatar = models.ImageField(upload_to="avatars/", null=True, blank=True)
     bio = models.TextField(blank=True)
     phone = models.CharField(max_length=20, blank=True)
+    bank_name = models.CharField(max_length=120, blank=True)
+    bank_account_number = models.CharField(max_length=64, blank=True)
+    bank_account_holder = models.CharField(max_length=120, blank=True)
+    bank_branch = models.CharField(max_length=120, blank=True)
+    bank_qr_image = models.ImageField(upload_to="bank_qr/", null=True, blank=True)
     is_tutor = models.BooleanField(default=False)
     is_verified = models.BooleanField(default=False)
     google_id = models.CharField(max_length=255, null=True, blank=True, unique=True)
@@ -61,6 +66,12 @@ class TutorProfile(models.Model):
     cv_file = models.FileField(upload_to="tutors/cv/", null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        # Empty strings collide on PostgreSQL unique constraint for optional CCCD.
+        if not self.cccd_number:
+            self.cccd_number = None
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Tutor: {self.full_name} ({self.user.email})"

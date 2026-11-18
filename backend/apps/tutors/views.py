@@ -38,6 +38,7 @@ from apps.bookings.models import Booking, TeachingSlot
 from apps.courses.models import Course, CourseSession
 from apps.courses.serializers import CourseReviewSerializer
 from core.cache_utils import get_cached_response, invalidate_cache_groups, set_cached_response
+from core.pagination import paginate_if_requested
 
 
 class TutorSettingsView(APIView):
@@ -367,24 +368,48 @@ class TutorCommissionPaymentView(APIView):
 
 class TutorPayoutRequestListCreateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_profile(self, request):
         return request.user.teaching_profile
 
+    @staticmethod
+    def _default_bank_info(user):
+        parts = [
+            (getattr(user, "bank_name", "") or "").strip(),
+            (getattr(user, "bank_account_number", "") or "").strip(),
+            (getattr(user, "bank_account_holder", "") or "").strip(),
+            (getattr(user, "bank_branch", "") or "").strip(),
+        ]
+        return " - ".join([p for p in parts if p])
+
     def get(self, request):
+        from core.pagination import paginate_if_requested
+
         try:
             profile = self.get_profile(request)
         except TutorProfile.DoesNotExist:
             return Response(
                 {"error": "Tutor profile not found"}, status=status.HTTP_404_NOT_FOUND
             )
-        queryset = TutorPayoutRequest.objects.filter(tutor=profile).select_related(
-            "course", "tutor__user"
+        queryset = (
+            TutorPayoutRequest.objects.filter(tutor=profile)
+            .select_related("course", "tutor__user")
+            .order_by("-created_at")
         )
-        return Response(TutorPayoutRequestSerializer(queryset, many=True).data)
+        return Response(
+            paginate_if_requested(
+                request,
+                queryset,
+                TutorPayoutRequestSerializer,
+                serializer_context={"request": request},
+            )
+        )
 
     @transaction.atomic
     def post(self, request):
+        from decimal import Decimal
+
         try:
             profile = self.get_profile(request)
         except TutorProfile.DoesNotExist:
@@ -393,17 +418,18 @@ class TutorPayoutRequestListCreateView(APIView):
             )
 
         request_type = request.data.get("request_type")
-        bank_info = (request.data.get("bank_info") or "").strip()
+        bank_info = (request.data.get("bank_info") or "").strip() or self._default_bank_info(request.user)
         qr_code_url = (request.data.get("qr_code_url") or "").strip()
+        qr_image = request.FILES.get("qr_image") or getattr(request.user, "bank_qr_image", None)
         note = (request.data.get("note") or "").strip()
         if request_type not in ["course_deposit_release", "platform_exit"]:
             return Response(
                 {"request_type": "Invalid payout request type."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if not bank_info and not qr_code_url:
+        if not bank_info and not qr_code_url and not qr_image:
             return Response(
-                {"bank_info": "Please provide bank information or QR code URL."},
+                {"bank_info": "Vui lòng nhập thông tin ngân hàng hoặc tải lên ảnh QR chuyển khoản."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -442,10 +468,14 @@ class TutorPayoutRequestListCreateView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
         else:
-            amount = min(profile.guarantee_deposit_balance, get_required_deposit())
+            net_available = max(
+                Decimal("0.00"),
+                Decimal(profile.guarantee_deposit_balance or 0) - Decimal(profile.commission_debt or 0),
+            )
+            amount = net_available
             if amount <= 0:
                 return Response(
-                    {"amount": "No guarantee deposit is available for refund."},
+                    {"amount": "Số dư cọc sau khi đối trừ nợ hoa hồng không đủ để rút."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             duplicate = TutorPayoutRequest.objects.filter(
@@ -466,11 +496,12 @@ class TutorPayoutRequestListCreateView(APIView):
             amount=amount,
             bank_info=bank_info,
             qr_code_url=qr_code_url,
+            qr_image=qr_image,
             note=note,
             created_by=request.user,
         )
         return Response(
-            TutorPayoutRequestSerializer(payout).data,
+            TutorPayoutRequestSerializer(payout, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -626,8 +657,20 @@ class TutorPublicListView(APIView):
         elif sort == "rating_desc":
             queryset = queryset.order_by("-rating_avg", "-total_reviews")
 
+        distinct_qs = queryset.distinct()
+        if request.query_params.get("page") or request.query_params.get("page_size"):
+            payload = paginate_if_requested(
+                request,
+                distinct_qs,
+                TutorProfileSerializer,
+                serializer_context={"request": request, "public_view": True},
+                default_page_size=10,
+            )
+            set_cached_response("tutors", payload, request, "public-list")
+            return Response(payload)
+
         serializer = TutorProfileSerializer(
-            queryset.distinct(),
+            distinct_qs,
             many=True,
             context={"request": request, "public_view": True},
         )
@@ -899,3 +942,32 @@ class TutorQuickSearchView(APIView):
             .order_by("-rating_avg", "min_rate")
             .distinct()
         )
+
+
+class TutorAnalyticsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .analytics import compute_tutor_period_analytics
+
+        try:
+            profile = TutorProfile.objects.select_related("user").get(user=request.user)
+        except TutorProfile.DoesNotExist:
+            return Response(
+                {"error": "Không tìm thấy hồ sơ gia sư."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        payload = compute_tutor_period_analytics(
+            tutor=profile,
+            mode=request.query_params.get("mode", "month"),
+            year=request.query_params.get("year"),
+            month=request.query_params.get("month"),
+            quarter=request.query_params.get("quarter"),
+            week_date=request.query_params.get("week_date"),
+            ranking_mode=request.query_params.get("ranking_mode", "month"),
+            ranking_year=request.query_params.get("ranking_year"),
+            ranking_month=request.query_params.get("ranking_month"),
+            ranking_quarter=request.query_params.get("ranking_quarter"),
+        )
+        return Response(payload)

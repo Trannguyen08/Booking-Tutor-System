@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Clock, CreditCard, MessageSquare, XCircle } from 'lucide-react';
 import { bookingsApi } from '../../api/bookings';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 
 const formatMoney = (value: string | number) =>
@@ -28,6 +29,8 @@ const BookingCenter: React.FC = () => {
   const [bookings, setBookings] = useState<any[]>([]);
   const [cases, setCases] = useState<any[]>([]);
   const [status, setStatus] = useState('all');
+  const [page, setPage] = useState(1);
+  const [casePage, setCasePage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [payingId, setPayingId] = useState<number | null>(null);
   const [caseForm, setCaseForm] = useState({ booking: 0, title: '', description: '', severity: 'medium' });
@@ -54,6 +57,13 @@ const BookingCenter: React.FC = () => {
     () => status === 'all' ? bookings : bookings.filter(item => item.status === status),
     [bookings, status],
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [status]);
+
+  const pagedBookings = useClientPagination(filteredBookings, page, 10);
+  const pagedCases = useClientPagination(cases, casePage, 10);
 
   const handlePayDeposit = async (bookingId: number) => {
     setPayingId(bookingId);
@@ -119,12 +129,12 @@ const BookingCenter: React.FC = () => {
             </select>
           </div>
 
-          {filteredBookings.length === 0 ? (
+          {pagedBookings.pagedItems.length === 0 ? (
             <div className="rounded-3xl border border-dashed border-gray-200 bg-white p-12 text-center">
               <p className="mb-4 text-sm font-semibold text-gray-500">Chưa có booking phù hợp.</p>
               <Link to="/find-tutors" className="inline-flex rounded-xl bg-[#5a5ce6] px-5 py-3 text-sm font-bold text-white">Tìm gia sư</Link>
             </div>
-          ) : filteredBookings.map(booking => {
+          ) : pagedBookings.pagedItems.map(booking => {
             const canPay = booking.status === 'approved' && booking.payment_status !== 'paid';
             const canCancel = !['cancelled', 'completed'].includes(booking.status);
             return (
@@ -170,6 +180,13 @@ const BookingCenter: React.FC = () => {
               </div>
             );
           })}
+          <Pagination
+            currentPage={pagedBookings.currentPage}
+            totalCount={pagedBookings.totalCount}
+            pageSize={pagedBookings.pageSize}
+            totalPages={pagedBookings.totalPages}
+            onPageChange={setPage}
+          />
         </section>
 
         <aside className="space-y-5">
@@ -195,13 +212,20 @@ const BookingCenter: React.FC = () => {
               <h2 className="font-extrabold text-gray-900">Khiếu nại của tôi</h2>
             </div>
             <div className="space-y-3">
-              {cases.slice(0, 5).map(item => (
+              {pagedCases.pagedItems.map(item => (
                 <div key={item.id} className="rounded-2xl bg-gray-50 p-4">
                   <p className="font-bold text-gray-900">{item.title}</p>
                   <p className="mt-1 text-xs font-semibold text-gray-500">{item.status} · {item.booking_label || item.course_title || 'Hồ sơ hỗ trợ'}</p>
                 </div>
               ))}
               {cases.length === 0 && <p className="text-sm font-semibold text-gray-400">Chưa có khiếu nại.</p>}
+              <Pagination
+                currentPage={pagedCases.currentPage}
+                totalCount={pagedCases.totalCount}
+                pageSize={pagedCases.pageSize}
+                totalPages={pagedCases.totalPages}
+                onPageChange={setCasePage}
+              />
             </div>
           </section>
 

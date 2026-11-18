@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useStudentCourseDetail } from '../hooks/useCourses';
 import { coursesApi } from '../api/courses';
+import client from '../api/client';
 import { groupSessionMaterials } from '../utils/materialGroups';
 
 const materialIcons: Record<string, any> = {
@@ -227,14 +228,31 @@ const CancellationBox = ({ course, completedCount, onSubmitted }: any) => {
   const [bankAccountName, setBankAccountName] = useState('');
   const [bankAccountNumber, setBankAccountNumber] = useState('');
   const [bankBranch, setBankBranch] = useState('');
+  const [savedQrUrl, setSavedQrUrl] = useState('');
   const [qr, setQr] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const likelyRefund = completedCount === 0;
   const pending = course.pending_cancellation_request;
 
+  useEffect(() => {
+    let mounted = true;
+    client.get('/auth/me/').then((res) => {
+      if (!mounted) return;
+      const u = res.data || {};
+      if (u.bank_name) setBankName((prev) => prev || u.bank_name);
+      if (u.bank_account_holder) setBankAccountName((prev) => prev || u.bank_account_holder);
+      if (u.bank_account_number) setBankAccountNumber((prev) => prev || u.bank_account_number);
+      if (u.bank_branch) setBankBranch((prev) => prev || u.bank_branch);
+      if (u.bank_qr_url) setSavedQrUrl(u.bank_qr_url);
+    }).catch(() => {});
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const submit = async () => {
     if (!reason.trim()) return;
-    if (likelyRefund && !qr && (!bankName.trim() || !bankAccountName.trim() || !bankAccountNumber.trim())) return;
+    if (likelyRefund && !qr && !savedQrUrl && (!bankName.trim() || !bankAccountName.trim() || !bankAccountNumber.trim())) return;
     const fd = new FormData();
     fd.append('reason', reason);
     fd.append('bank_name', bankName);
@@ -277,6 +295,11 @@ const CancellationBox = ({ course, completedCount, onSubmitted }: any) => {
               <input value={bankAccountNumber} onChange={e => setBankAccountNumber(e.target.value)} placeholder="Số tài khoản" className="rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none" />
               <input value={bankAccountName} onChange={e => setBankAccountName(e.target.value)} placeholder="Tên chủ tài khoản" className="rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none" />
               <input value={bankBranch} onChange={e => setBankBranch(e.target.value)} placeholder="Chi nhánh (nếu có)" className="rounded-xl bg-slate-50 px-4 py-3 text-sm outline-none" />
+              {savedQrUrl && !qr && (
+                <p className="md:col-span-2 text-xs font-semibold text-emerald-700">
+                  Đã lấy thông tin ngân hàng &amp; mã QR từ hồ sơ cá nhân. Bạn có thể tải ảnh QR khác nếu muốn thay đổi.
+                </p>
+              )}
               <input type="file" accept="image/*" onChange={e => setQr(e.target.files?.[0] || null)} className="md:col-span-2 text-sm" />
             </div>
           )}

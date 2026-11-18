@@ -73,12 +73,16 @@ const Select = (props: any) => (
 export const SettingsManagement: React.FC = () => {
   const [items, setItems] = useState<any[]>([]);
   const { showToast } = useToast();
-  const load = () => adminApi.getSettings().then(data => setItems(toArray(data)));
+  const load = () => adminApi.getSettings().then(data => setItems(toArray(data))).catch(() => setItems([]));
   useEffect(() => { load(); }, []);
   const update = async (item: any, value: string) => {
-    await adminApi.updateSetting(item.key, value);
-    showToast('Đã cập nhật cài đặt.', 'success');
-    load();
+    try {
+      await adminApi.updateSetting(item.key, value);
+      showToast('Đã cập nhật cài đặt.', 'success');
+      load();
+    } catch {
+      showToast('Không thể cập nhật cài đặt.', 'error');
+    }
   };
   return (
     <div className="space-y-6">

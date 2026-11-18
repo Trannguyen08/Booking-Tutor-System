@@ -136,16 +136,27 @@ def create_course_cancellation_request(course, request, requested_by_role):
         course, requested_by_role
     )
     refund_required = refund_amount > 0
+    stu = course.student
+    bank_account_name = (request.data.get("bank_account_name") or "").strip() or (
+        getattr(stu, "bank_account_holder", "") or ""
+    )
+    bank_account_number = (request.data.get("bank_account_number") or "").strip() or (
+        getattr(stu, "bank_account_number", "") or ""
+    )
+    bank_name = (request.data.get("bank_name") or "").strip() or (
+        getattr(stu, "bank_name", "") or ""
+    )
+    bank_branch = (request.data.get("bank_branch") or "").strip() or (
+        getattr(stu, "bank_branch", "") or ""
+    )
+    refund_qr = request.FILES.get("refund_qr") or getattr(stu, "bank_qr_image", None)
+
     if refund_required:
-        has_bank_info = all(
-            (request.data.get(field) or "").strip()
-            for field in ["bank_account_name", "bank_account_number", "bank_name"]
-        )
-        has_qr = bool(request.FILES.get("refund_qr"))
-        if not has_bank_info and not has_qr:
+        has_bank_info = all([bank_account_name, bank_account_number, bank_name])
+        if not has_bank_info and not refund_qr:
             return None, Response(
                 {
-                    "refund_info": "Refund requests require bank account details or a transfer QR image."
+                    "refund_info": "Vui lòng cập nhật thông tin tài khoản ngân hàng hoặc ảnh QR hoàn tiền."
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
@@ -159,11 +170,11 @@ def create_course_cancellation_request(course, request, requested_by_role):
         refund_percent=refund_percent,
         refund_amount=refund_amount,
         refund_note=refund_note,
-        bank_account_name=request.data.get("bank_account_name", ""),
-        bank_account_number=request.data.get("bank_account_number", ""),
-        bank_name=request.data.get("bank_name", ""),
-        bank_branch=request.data.get("bank_branch", ""),
-        refund_qr=request.FILES.get("refund_qr"),
+        bank_account_name=bank_account_name,
+        bank_account_number=bank_account_number,
+        bank_name=bank_name,
+        bank_branch=bank_branch,
+        refund_qr=refund_qr,
     )
     invalidate_cache_groups("courses", "bookings")
     return cancellation, None
@@ -216,9 +227,12 @@ class StudentCourseListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        cached = get_cached_response("courses", request, "student-list")
-        if cached is not None:
-            return Response(cached)
+        from core.pagination import paginate_items
+
+        if request.query_params.get("page") is None:
+            cached = get_cached_response("courses", request, "student-list")
+            if cached is not None:
+                return Response(cached)
         courses = (
             Course.objects.filter(student=request.user)
             .select_related("tutor", "tutor__user", "tutor__user__tutor_profile", "subject")
@@ -245,18 +259,39 @@ class StudentCourseListView(APIView):
             course__student=request.user, student_completed=True
         ).count()
 
+        if request.query_params.get("page") is not None:
+            paginated = paginate_items(
+                request,
+                courses,
+                CourseListSerializer,
+                serializer_context={"request": request},
+                default_page_size=10,
+            )
+            return Response(
+                {
+                    "summary": {
+                        "total_this_week": total_this_week,
+                        "completed_this_week": completed_this_week,
+                        "total_completed_all": total_completed_all,
+                        "active_courses": courses.filter(status="active").count(),
+                    },
+                    "courses": paginated["results"],
+                    "pagination": paginated,
+                }
+            )
+
         serializer = CourseListSerializer(
             courses, many=True, context={"request": request}
         )
         data = {
-                "summary": {
-                    "total_this_week": total_this_week,
-                    "completed_this_week": completed_this_week,
-                    "total_completed_all": total_completed_all,
-                    "active_courses": courses.filter(status="active").count(),
-                },
-                "courses": serializer.data,
-            }
+            "summary": {
+                "total_this_week": total_this_week,
+                "completed_this_week": completed_this_week,
+                "total_completed_all": total_completed_all,
+                "active_courses": courses.filter(status="active").count(),
+            },
+            "courses": serializer.data,
+        }
         set_cached_response("courses", data, request, "student-list")
         return Response(data)
 
@@ -437,9 +472,12 @@ class TutorCourseListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        cached = get_cached_response("courses", request, "tutor-list")
-        if cached is not None:
-            return Response(cached)
+        from core.pagination import paginate_items
+
+        if request.query_params.get("page") is None:
+            cached = get_cached_response("courses", request, "tutor-list")
+            if cached is not None:
+                return Response(cached)
         try:
             tutor_profile = request.user.teaching_profile
         except Exception:
@@ -454,14 +492,31 @@ class TutorCourseListView(APIView):
             .prefetch_related("sessions")
         )
 
+        if request.query_params.get("page") is not None:
+            paginated = paginate_items(
+                request,
+                courses,
+                CourseListSerializer,
+                serializer_context={"request": request},
+                default_page_size=10,
+            )
+            return Response(
+                {
+                    "courses": paginated["results"],
+                    "pagination": paginated,
+                    "total_students": courses.values("student").distinct().count(),
+                    "active_courses": courses.filter(status="active").count(),
+                }
+            )
+
         serializer = CourseListSerializer(
             courses, many=True, context={"request": request}
         )
         data = {
-                "courses": serializer.data,
-                "total_students": courses.values("student").distinct().count(),
-                "active_courses": courses.filter(status="active").count(),
-            }
+            "courses": serializer.data,
+            "total_students": courses.values("student").distinct().count(),
+            "active_courses": courses.filter(status="active").count(),
+        }
         set_cached_response("courses", data, request, "tutor-list")
         return Response(data)
 
@@ -470,19 +525,66 @@ class TutorCourseReviewListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        reviews = (
+        from apps.online_classes.models import OnlineClassReview
+
+        tutor = request.user.teaching_profile
+        course_reviews = (
             CourseReview.objects.filter(
-                tutor=request.user.teaching_profile,
+                tutor=tutor,
                 moderation_status=CourseReview.ModerationStatus.APPROVED,
             )
             .select_related("student", "course__subject")
             .order_by("-created_at")
         )
-        return Response(
-            CourseReviewSerializer(
-                reviews, many=True, context={"request": request}
-            ).data
+        serialized_course = CourseReviewSerializer(
+            course_reviews, many=True, context={"request": request}
+        ).data
+        items = []
+        for row in serialized_course:
+            entry = dict(row)
+            entry["uid"] = f"course-{row['id']}"
+            entry["source"] = "course"
+            entry["source_label"] = "Khóa học 1-1"
+            items.append(entry)
+
+        online_reviews = (
+            OnlineClassReview.objects.filter(
+                online_class__tutor=tutor,
+                is_visible=True,
+            )
+            .select_related("student", "online_class__subject")
+            .order_by("-created_at")
         )
+        for oc_rev in online_reviews:
+            items.append(
+                {
+                    "id": oc_rev.id,
+                    "uid": f"online-{oc_rev.id}",
+                    "source": "online_class",
+                    "source_label": "Lớp nhóm online",
+                    "course": oc_rev.online_class_id,
+                    "course_title": oc_rev.online_class.title,
+                    "subject_name": (
+                        oc_rev.online_class.subject.name
+                        if oc_rev.online_class.subject
+                        else oc_rev.online_class.title
+                    ),
+                    "student": oc_rev.student_id,
+                    "student_name": (
+                        oc_rev.student.get_full_name()
+                        or oc_rev.student.username
+                        or oc_rev.student.email
+                    ),
+                    "rating": oc_rev.rating,
+                    "comment": oc_rev.comment,
+                    "created_at": oc_rev.created_at.isoformat(),
+                }
+            )
+
+        from core.pagination import paginate_if_requested
+
+        items.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        return Response(paginate_if_requested(request, items))
 
 
 class TutorExtensionRequestListView(APIView):

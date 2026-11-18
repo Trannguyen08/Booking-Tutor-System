@@ -8,12 +8,22 @@ const toArray = (data: any) => {
   return [];
 };
 
+const toPagination = (data: any, fallbackCount = 0) => ({
+  count: typeof data?.count === 'number' ? data.count : fallbackCount,
+  page: typeof data?.page === 'number' ? data.page : 1,
+  page_size: typeof data?.page_size === 'number' ? data.page_size : 10,
+  total_pages: typeof data?.total_pages === 'number' ? data.total_pages : Math.max(1, Math.ceil((typeof data?.count === 'number' ? data.count : fallbackCount) / 10)),
+});
+
 interface AdminState {
   stats: any | null;
   finance: any | null;
   tutors: any[];
   users: any[];
   courses: any[];
+  tutorsPagination: { count: number; page: number; page_size: number; total_pages: number };
+  usersPagination: { count: number; page: number; page_size: number; total_pages: number };
+  coursesPagination: { count: number; page: number; page_size: number; total_pages: number };
   isLoading: boolean;
   error: string | null;
 
@@ -35,6 +45,9 @@ export const useAdminStore = create<AdminState>((set, get) => ({
   tutors: [],
   users: [],
   courses: [],
+  tutorsPagination: { count: 0, page: 1, page_size: 10, total_pages: 1 },
+  usersPagination: { count: 0, page: 1, page_size: 10, total_pages: 1 },
+  coursesPagination: { count: 0, page: 1, page_size: 10, total_pages: 1 },
   isLoading: false,
   error: null,
 
@@ -52,7 +65,8 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const tutors = await adminService.fetchTutors(params);
-      set({ tutors: toArray(tutors), isLoading: false });
+      const list = toArray(tutors);
+      set({ tutors: list, tutorsPagination: toPagination(tutors, list.length), isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
@@ -62,7 +76,8 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const users = await adminService.fetchUsers(params);
-      set({ users: toArray(users), isLoading: false });
+      const list = toArray(users);
+      set({ users: list, usersPagination: toPagination(users, list.length), isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }
@@ -72,7 +87,8 @@ export const useAdminStore = create<AdminState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const courses = await adminService.fetchCourses(params);
-      set({ courses: toArray(courses), isLoading: false });
+      const list = toArray(courses);
+      set({ courses: list, coursesPagination: toPagination(courses, list.length), isLoading: false });
     } catch (error: any) {
       set({ error: error.message, isLoading: false });
     }

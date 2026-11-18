@@ -4,7 +4,6 @@ from apps.users.models import (
     TutorProfile as UserTutorProfile,
     TutorAchievement,
 )
-from apps.ai_reviews.models import AIReview
 from apps.tutors.models import (
     TutorGuaranteeTransaction,
     TutorProfile as TeachingProfile,
@@ -110,27 +109,6 @@ class AdminTutorAchievementSerializer(serializers.ModelSerializer):
         )
 
 
-class AdminAIReviewSummarySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AIReview
-        fields = [
-            "id",
-            "status",
-            "pass_score",
-            "risk_level",
-            "good_points",
-            "bad_points",
-            "missing_fields",
-            "warning_flags",
-            "admin_suggestion",
-            "error_message",
-            "created_at",
-            "updated_at",
-            "reviewed_at",
-        ]
-        read_only_fields = fields
-
-
 class AdminTutorRegistrationSerializer(serializers.ModelSerializer):
     user = AdminUserSerializer(read_only=True)
     user_email = serializers.ReadOnlyField(source="user.email")
@@ -148,7 +126,6 @@ class AdminTutorRegistrationSerializer(serializers.ModelSerializer):
     commission_debt = serializers.SerializerMethodField()
     new_class_locked = serializers.SerializerMethodField()
     new_class_lock_reason = serializers.SerializerMethodField()
-    latest_ai_review = serializers.SerializerMethodField()
 
     class Meta:
         model = UserTutorProfile
@@ -181,7 +158,6 @@ class AdminTutorRegistrationSerializer(serializers.ModelSerializer):
             "commission_debt",
             "new_class_locked",
             "new_class_lock_reason",
-            "latest_ai_review",
             "created_at",
         ]
 
@@ -261,17 +237,6 @@ class AdminTutorRegistrationSerializer(serializers.ModelSerializer):
     def get_new_class_lock_reason(self, obj):
         teaching_profile = self._teaching_profile(obj)
         return teaching_profile.new_class_lock_reason if teaching_profile else ""
-
-    def get_latest_ai_review(self, obj):
-        prefetched_reviews = getattr(obj, "prefetched_ai_reviews", None)
-        review = (
-            prefetched_reviews[0]
-            if prefetched_reviews
-            else obj.ai_reviews.order_by("-created_at").first()
-        )
-        if not review:
-            return None
-        return AdminAIReviewSummarySerializer(review).data
 
 
 class AdminCourseSerializer(serializers.ModelSerializer):
@@ -417,6 +382,8 @@ class TutorPayoutRequestSerializer(serializers.ModelSerializer):
     tutor_name = serializers.CharField(source="tutor.full_name", read_only=True)
     tutor_email = serializers.EmailField(source="tutor.user.email", read_only=True)
     course_title = serializers.CharField(source="course.title", read_only=True)
+    qr_image_url = serializers.SerializerMethodField()
+    tutor_bank_info = serializers.SerializerMethodField()
 
     class Meta:
         model = TutorPayoutRequest
@@ -430,7 +397,9 @@ class TutorPayoutRequestSerializer(serializers.ModelSerializer):
             "request_type",
             "amount",
             "bank_info",
+            "tutor_bank_info",
             "qr_code_url",
+            "qr_image_url",
             "note",
             "admin_note",
             "status",
@@ -440,6 +409,34 @@ class TutorPayoutRequestSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def _abs_url(self, url: str):
+        if not url:
+            return ""
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request and url.startswith("/") else url
+
+    def get_qr_image_url(self, obj):
+        if obj.qr_image:
+            return self._abs_url(obj.qr_image.url)
+        if obj.qr_code_url:
+            return obj.qr_code_url
+        user_qr = getattr(obj.tutor.user, "bank_qr_image", None)
+        if user_qr:
+            return self._abs_url(user_qr.url)
+        return ""
+
+    def get_tutor_bank_info(self, obj):
+        if (obj.bank_info or "").strip():
+            return obj.bank_info.strip()
+        u = obj.tutor.user
+        parts = [
+            (getattr(u, "bank_name", "") or "").strip(),
+            (getattr(u, "bank_account_number", "") or "").strip(),
+            (getattr(u, "bank_account_holder", "") or "").strip(),
+            (getattr(u, "bank_branch", "") or "").strip(),
+        ]
+        return " - ".join([p for p in parts if p])
 
 
 class AdminCourseCancellationRequestSerializer(serializers.ModelSerializer):
@@ -452,6 +449,11 @@ class AdminCourseCancellationRequestSerializer(serializers.ModelSerializer):
     subject_name = serializers.CharField(source="course.subject.name", read_only=True)
     requested_by_name = serializers.SerializerMethodField()
     refund_qr_url = serializers.SerializerMethodField()
+    bank_account_name = serializers.SerializerMethodField()
+    bank_account_number = serializers.SerializerMethodField()
+    bank_name = serializers.SerializerMethodField()
+    bank_branch = serializers.SerializerMethodField()
+    student_bank_saved = serializers.SerializerMethodField()
 
     class Meta:
         model = CourseCancellationRequest
@@ -477,6 +479,7 @@ class AdminCourseCancellationRequestSerializer(serializers.ModelSerializer):
             "bank_name",
             "bank_branch",
             "refund_qr_url",
+            "student_bank_saved",
             "status",
             "admin_note",
             "created_at",
@@ -489,13 +492,40 @@ class AdminCourseCancellationRequestSerializer(serializers.ModelSerializer):
     def get_requested_by_name(self, obj):
         return obj.requested_by.get_full_name() or obj.requested_by.username or obj.requested_by.email
 
+    def get_bank_account_name(self, obj):
+        return (obj.bank_account_name or "").strip() or (
+            getattr(obj.course.student, "bank_account_holder", "") or ""
+        )
+
+    def get_bank_account_number(self, obj):
+        return (obj.bank_account_number or "").strip() or (
+            getattr(obj.course.student, "bank_account_number", "") or ""
+        )
+
+    def get_bank_name(self, obj):
+        return (obj.bank_name or "").strip() or (
+            getattr(obj.course.student, "bank_name", "") or ""
+        )
+
+    def get_bank_branch(self, obj):
+        return (obj.bank_branch or "").strip() or (
+            getattr(obj.course.student, "bank_branch", "") or ""
+        )
+
+    def get_student_bank_saved(self, obj):
+        stu = obj.course.student
+        return bool(
+            getattr(stu, "bank_name", "") and getattr(stu, "bank_account_number", "")
+        )
+
     def get_refund_qr_url(self, obj):
-        if not obj.refund_qr:
+        field = obj.refund_qr or getattr(obj.course.student, "bank_qr_image", None)
+        if not field:
             return None
         request = self.context.get("request")
         if request is not None:
-            return request.build_absolute_uri(obj.refund_qr.url)
-        return obj.refund_qr.url
+            return request.build_absolute_uri(field.url)
+        return field.url
 
 
 class AdminBookingSerializer(serializers.ModelSerializer):

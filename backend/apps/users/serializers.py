@@ -7,6 +7,7 @@ User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
+    bank_qr_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -18,6 +19,12 @@ class UserSerializer(serializers.ModelSerializer):
             "email",
             "phone",
             "bio",
+            "bank_name",
+            "bank_account_number",
+            "bank_account_holder",
+            "bank_branch",
+            "bank_qr_image",
+            "bank_qr_url",
             "is_tutor",
             "is_verified",
             "is_staff",
@@ -35,16 +42,23 @@ class UserSerializer(serializers.ModelSerializer):
             "is_staff",
             "is_superuser",
             "avatar_url",
+            "bank_qr_url",
         )
 
-    def get_avatar_url(self, obj):
-        if not obj.avatar:
+    def _build_media_url(self, field):
+        if not field:
             return ""
         request = self.context.get("request")
-        url = obj.avatar.url
+        url = field.url
         return (
             request.build_absolute_uri(url) if request and url.startswith("/") else url
         )
+
+    def get_avatar_url(self, obj):
+        return self._build_media_url(obj.avatar)
+
+    def get_bank_qr_url(self, obj):
+        return self._build_media_url(obj.bank_qr_image)
 
 
 class RegisterSerializer(serializers.ModelSerializer):

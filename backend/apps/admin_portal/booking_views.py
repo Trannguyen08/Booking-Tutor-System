@@ -93,6 +93,16 @@ class AdminPaymentOverviewView(APIView):
     def get(self, request):
         month, year = selected_month(request)
         bookings = Booking.objects.filter(created_at__year=year, created_at__month=month)
+        from core.pagination import paginate_items
+
+        filtered_bookings = (
+            bookings.select_related("student", "tutor__user", "subject", "teaching_slot")
+            .exclude(payment_status="unpaid")
+            .order_by("-created_at")
+        )
+        paginated = paginate_items(
+            request, filtered_bookings, AdminBookingSerializer, default_page_size=10
+        )
         return Response(
             {
                 "selected": {"month": month, "year": year},
@@ -103,12 +113,10 @@ class AdminPaymentOverviewView(APIView):
                     "failed_count": bookings.filter(payment_status="failed").count(),
                     "cancelled_count": bookings.filter(payment_status="cancelled").count(),
                 },
-                "items": AdminBookingSerializer(
-                    bookings.select_related("student", "tutor__user", "subject", "teaching_slot")
-                    .exclude(payment_status="unpaid")
-                    .order_by("-created_at")[:200],
-                    many=True,
-                ).data,
+                "items": paginated["results"]
+                if request.query_params.get("page") is not None
+                else AdminBookingSerializer(filtered_bookings[:200], many=True).data,
+                "pagination": paginated,
             }
         )
 

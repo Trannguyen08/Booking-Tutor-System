@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CheckCircle2, ChevronDown, FileText, Image as ImageIcon, Link2, PauseCircle, Search, Video, X, XCircle } from 'lucide-react';
 import { useAdminStore } from '../../store/useAdminStore';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { Pagination, useClientPagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 import { groupSessionMaterials } from '../../utils/materialGroups';
 
@@ -17,6 +18,14 @@ const statusClasses: Record<string, string> = {
   completed: 'border-blue-200 bg-blue-50 text-blue-700',
   paused: 'border-amber-200 bg-amber-50 text-amber-700',
   cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
+};
+
+const commissionStatusLabels: Record<string, string> = {
+  due: 'Chờ thanh toán',
+  paid: 'Đã thanh toán',
+  deducted: 'Đã trừ cọc',
+  waived: 'Miễn trừ',
+  pending: 'Chưa phát sinh',
 };
 
 const currentYear = new Date().getFullYear();
@@ -42,6 +51,7 @@ const AdminCourseManagement: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [month, setMonth] = useState('');
   const [year, setYear] = useState(String(now.getFullYear()));
+  const [page, setPage] = useState(1);
   const [expandedCourseIds, setExpandedCourseIds] = useState<number[]>([]);
   const [imagePreview, setImagePreview] = useState<{ url: string; title: string } | null>(null);
   const { courses, fetchCourses, courseAction, isLoading } = useAdminStore();
@@ -70,6 +80,12 @@ const AdminCourseManagement: React.FC = () => {
       ).includes(keyword);
     });
   }, [courses, searchTerm]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, statusFilter, month, year]);
+
+  const pagedCourses = useClientPagination(filteredCourses, page, 10);
 
   const handleAction = async (id: number, action: string) => {
     try {
@@ -121,25 +137,25 @@ const AdminCourseManagement: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] text-left">
+          <table className="w-full min-w-[1220px] text-left">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Khóa học</th>
-                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Gia sư</th>
-                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Học viên</th>
-                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Tiến độ</th>
-                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Học phí</th>
-                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Commission</th>
-                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500">Trạng thái</th>
-                <th className="px-5 py-4 text-right text-xs font-black uppercase text-slate-500">Thao tác</th>
+                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Khóa học</th>
+                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Gia sư</th>
+                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Học viên</th>
+                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Tiến độ</th>
+                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Học phí</th>
+                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Commission</th>
+                <th className="px-5 py-4 text-xs font-black uppercase text-slate-500 whitespace-nowrap">Trạng thái</th>
+                <th className="px-5 py-4 text-right text-xs font-black uppercase text-slate-500 whitespace-nowrap">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr><td colSpan={8} className="py-12 text-center font-semibold text-slate-400">Đang tải khóa học...</td></tr>
-              ) : filteredCourses.length === 0 ? (
+              ) : pagedCourses.pagedItems.length === 0 ? (
                 <tr><td colSpan={8} className="py-12 text-center font-semibold text-slate-400">Không có khóa học phù hợp.</td></tr>
-              ) : filteredCourses.map((course) => (
+              ) : pagedCourses.pagedItems.map((course) => (
                 <React.Fragment key={course.id}>
                 <tr className="hover:bg-slate-50">
                   <td className="px-5 py-4">
@@ -163,17 +179,19 @@ const AdminCourseManagement: React.FC = () => {
                     <p className="font-black text-slate-900">{course.completed_sessions || 0}/{course.total_sessions || 0}</p>
                     <p className="mt-1 text-xs text-slate-500">{course.schedule_time || 'Chưa có lịch'}</p>
                   </td>
-                  <td className="px-5 py-4 font-bold text-slate-700">{formatCurrency(Number(course.hourly_rate || 0))}/h</td>
-                  <td className="px-5 py-4">
+                  <td className="px-5 py-4 font-bold text-slate-700 whitespace-nowrap">{formatCurrency(Number(course.hourly_rate || 0))}/h</td>
+                  <td className="px-5 py-4 whitespace-nowrap">
                     <p className="font-black text-emerald-700">{formatCurrency(Number(course.commission_amount || 0))}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">{course.commission_status || 'Chưa phát sinh'}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500 whitespace-nowrap">
+                      {commissionStatusLabels[course.commission_status] || course.commission_status || 'Chưa phát sinh'}
+                    </p>
                   </td>
-                  <td className="px-5 py-4">
-                    <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${statusClasses[course.status] || statusClasses.active}`}>
+                  <td className="px-5 py-4 whitespace-nowrap">
+                    <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black ${statusClasses[course.status] || statusClasses.active}`}>
                       {statusLabels[course.status] || course.status}
                     </span>
                   </td>
-                  <td className="px-5 py-4">
+                  <td className="px-5 py-4 whitespace-nowrap">
                     <div className="flex justify-end gap-1">
                       <button
                         title="Xem tài liệu"
@@ -256,6 +274,15 @@ const AdminCourseManagement: React.FC = () => {
               ))}
             </tbody>
           </table>
+        </div>
+        <div className="px-5 pb-4">
+          <Pagination
+            currentPage={pagedCourses.currentPage}
+            totalCount={pagedCourses.totalCount}
+            pageSize={pagedCourses.pageSize}
+            totalPages={pagedCourses.totalPages}
+            onPageChange={setPage}
+          />
         </div>
       </div>
       {imagePreview && (

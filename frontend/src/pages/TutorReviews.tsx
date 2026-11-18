@@ -2,20 +2,31 @@ import React, { useEffect, useState } from 'react';
 import { MessageSquareWarning, Star } from 'lucide-react';
 import { coursesApi } from '../api/courses';
 import { bookingsApi } from '../api/bookings';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 import { useToast } from '../components/ui/Toast';
 
 const TutorReviews: React.FC = () => {
   const { showToast } = useToast();
   const [reviews, setReviews] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
 
   const load = async () => setReviews(await coursesApi.getTutorReviews().catch(() => []));
   useEffect(() => { load(); }, []);
+  const pagedReviews = useClientPagination(reviews, page, 10);
 
   const dispute = async (review: any) => {
     const reason = window.prompt('Lý do yêu cầu admin xem xét đánh giá này');
     if (reason === null) return;
     try {
-      await bookingsApi.disputeTutorReview(review.id, { reason });
+      if (review.source === 'online_class') {
+        await bookingsApi.createSupportCase({
+          title: `Xem xét đánh giá lớp online: ${review.course_title || review.subject_name || ''}`.trim(),
+          description: `Đánh giá #${review.id} từ ${review.student_name}: ${reason}`,
+          severity: 'medium',
+        });
+      } else {
+        await bookingsApi.disputeTutorReview(review.id, { reason });
+      }
       showToast('Đã gửi yêu cầu xem xét review cho admin.', 'success');
     } catch (error: any) {
       showToast(error.response?.data?.error || 'Không thể gửi yêu cầu.', 'error');
@@ -30,11 +41,19 @@ const TutorReviews: React.FC = () => {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-2">
-        {reviews.map(review => (
-          <div key={review.id} className="rounded-3xl border border-slate-100 bg-white p-6">
+        {pagedReviews.pagedItems.map(review => (
+          <div key={review.uid || `${review.source || 'course'}-${review.id}`} className="rounded-3xl border border-slate-100 bg-white p-6">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-extrabold text-slate-900">{review.subject_name || 'Khóa học'}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-bold text-indigo-700">
+                    {review.source_label || 'Khóa học 1-1'}
+                  </span>
+                  <p className="font-extrabold text-slate-900">{review.subject_name || 'Khóa học'}</p>
+                </div>
+                {review.course_title && (
+                  <p className="mt-1 text-xs font-bold text-slate-600">{review.course_title}</p>
+                )}
                 <p className="mt-1 text-xs font-semibold text-slate-400">{review.student_name} · {new Date(review.created_at).toLocaleDateString('vi-VN')}</p>
               </div>
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
@@ -51,6 +70,13 @@ const TutorReviews: React.FC = () => {
         ))}
         {reviews.length === 0 && <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm font-semibold text-slate-400">Chưa có đánh giá.</div>}
       </div>
+      <Pagination
+        currentPage={pagedReviews.currentPage}
+        totalCount={pagedReviews.totalCount}
+        pageSize={pagedReviews.pageSize}
+        totalPages={pagedReviews.totalPages}
+        onPageChange={setPage}
+      />
     </div>
   );
 };

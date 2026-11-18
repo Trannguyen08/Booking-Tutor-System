@@ -422,6 +422,54 @@ def kick_student_by_tutor(
     return enrollment
 
 
+def notify_active_students_session_update(
+    *,
+    online_class: OnlineClass,
+    session: OnlineClassSession,
+    action_title: str,
+    detail_text: str = "",
+) -> int:
+    """Send email + in-app notification to every active student in an online class."""
+    active_enrollments = (
+        OnlineClassEnrollment.objects.select_related("student")
+        .filter(online_class=online_class, status="active")
+    )
+    notified = 0
+    for enrollment in active_enrollments:
+        student = enrollment.student
+        try:
+            send_mail(
+                subject=f"TutorMatch - {action_title} ({online_class.title})",
+                message=(
+                    f"Chào {student.get_full_name() or student.username},\n\n"
+                    f"Gia sư {online_class.tutor.full_name} vừa cập nhật nội dung cho "
+                    f"Buổi {session.session_number} ({session.title}) trong lớp '{online_class.title}'.\n"
+                    + (f"\nChi tiết: {detail_text}\n" if detail_text else "")
+                    + "\nVui lòng đăng nhập TutorMatch và vào trang lớp học để xem tài liệu và lời nhắn mới nhất.\n\n"
+                    "Trân trọng,\nĐội ngũ TutorMatch."
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[student.email],
+                fail_silently=True,
+            )
+        except Exception as exc:
+            logger.warning("Failed sending session material email to %s: %s", student.email, exc)
+
+        create_notification(
+            user_id=student.id,
+            title=f"{action_title} - Buổi {session.session_number}",
+            message=(
+                f"Lớp '{online_class.title}': {detail_text}"
+                if detail_text
+                else f"Gia sư vừa cập nhật tài liệu/lời nhắn cho Buổi {session.session_number} lớp '{online_class.title}'."
+            ),
+            notification_type="course",
+            link=f"/online-classes/{online_class.id}",
+        )
+        notified += 1
+    return notified
+
+
 def send_due_payment_reminders(today=None) -> int:
     current_date = today or timezone.localdate()
     enrollments = OnlineClassEnrollment.objects.select_related(

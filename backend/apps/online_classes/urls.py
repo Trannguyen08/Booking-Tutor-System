@@ -17,7 +17,10 @@ from .views import (
     TutorOnlineClassDetailView,
     TutorOnlineClassListCreateView,
     TutorOnlineClassSessionCreateView,
+    TutorOnlineClassSessionMaterialCreateView,
+    TutorOnlineClassSessionMaterialDeleteView,
     TutorOnlineClassSessionUpdateView,
+    TutorOnlineClassStudentsPaymentsView,
 )
 
 urlpatterns = [
@@ -61,6 +64,11 @@ urlpatterns = [
         name="tutor-online-class-detail",
     ),
     path(
+        "tutor/<int:pk>/students-payments/",
+        TutorOnlineClassStudentsPaymentsView.as_view(),
+        name="tutor-online-class-students-payments",
+    ),
+    path(
         "tutor/<int:pk>/sessions/",
         TutorOnlineClassSessionCreateView.as_view(),
         name="tutor-online-class-session-create",
@@ -69,6 +77,16 @@ urlpatterns = [
         "tutor/sessions/<int:session_id>/",
         TutorOnlineClassSessionUpdateView.as_view(),
         name="tutor-online-class-session-update",
+    ),
+    path(
+        "tutor/sessions/<int:session_id>/materials/",
+        TutorOnlineClassSessionMaterialCreateView.as_view(),
+        name="tutor-online-class-session-material-create",
+    ),
+    path(
+        "tutor/materials/<int:material_id>/",
+        TutorOnlineClassSessionMaterialDeleteView.as_view(),
+        name="tutor-online-class-session-material-delete",
     ),
     path(
         "tutor/enrollments/<int:enrollment_id>/kick/",

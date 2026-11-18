@@ -2,6 +2,7 @@ import client, { publicClient } from '../api/client';
 
 export const tutorService = {
   getDashboard: () => client.get('/tutors/dashboard/').then(res => res.data),
+  getAnalytics: (params?: any) => client.get('/tutors/analytics/', { params }).then(res => res.data),
   getProfile: () => client.get('/tutors/settings/').then(res => res.data),
   updateProfile: (data: any) => client.patch('/tutors/settings/', data).then(res => res.data),
   uploadCv: (file: File) => {
@@ -18,7 +19,13 @@ export const tutorService = {
     client.post('/tutors/guarantee/deposit/', data).then(res => res.data),
   payCommission: (data: { amount: string; note?: string }) =>
     client.post('/tutors/guarantee/commission/pay/', data).then(res => res.data),
-  getPayoutRequests: () => client.get('/tutors/payout-requests/').then(res => res.data),
-  createPayoutRequest: (data: any) =>
-    client.post('/tutors/payout-requests/', data).then(res => res.data),
+  getPayoutRequests: (params?: any) => client.get('/tutors/payout-requests/', { params }).then(res => res.data),
+  createPayoutRequest: (data: any) => {
+    if (data instanceof FormData) {
+      return client.post('/tutors/payout-requests/', data, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }).then(res => res.data);
+    }
+    return client.post('/tutors/payout-requests/', data).then(res => res.data);
+  },
 };

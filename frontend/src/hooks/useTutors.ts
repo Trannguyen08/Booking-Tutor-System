@@ -3,6 +3,12 @@ import { publicClient } from '../api/client';
 
 export const useTutors = () => {
   const [tutors, setTutors] = useState<any[]>([]);
+  const [pagination, setPagination] = useState<{
+    count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -10,7 +16,24 @@ export const useTutors = () => {
     setLoading(true);
     try {
       const res = await publicClient.get('/tutors/public/', { params: filters });
-      setTutors(res.data);
+      if (Array.isArray(res.data)) {
+        setTutors(res.data);
+        setPagination({
+          count: res.data.length,
+          page: 1,
+          page_size: 10,
+          total_pages: Math.max(1, Math.ceil(res.data.length / 10)),
+        });
+      } else {
+        const results = Array.isArray(res.data?.results) ? res.data.results : [];
+        setTutors(results);
+        setPagination({
+          count: Number(res.data?.count ?? results.length),
+          page: Number(res.data?.page ?? 1),
+          page_size: Number(res.data?.page_size ?? 10),
+          total_pages: Number(res.data?.total_pages ?? 1),
+        });
+      }
       setError(null);
     } catch (err: any) {
       setError(err.message || 'Error fetching tutors');
@@ -19,7 +42,7 @@ export const useTutors = () => {
     }
   }, []);
 
-  return { tutors, loading, error, fetchTutors };
+  return { tutors, pagination, loading, error, fetchTutors };
 };
 
 export const useSubjects = () => {

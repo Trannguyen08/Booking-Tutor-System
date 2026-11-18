@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db.models import Q, Sum
 from django.utils import timezone
@@ -16,19 +18,23 @@ from .models import (
     OnlineClassPayment,
     OnlineClassReview,
     OnlineClassSession,
+    OnlineClassSessionMaterial,
 )
 from .serializers import (
     OnlineClassEnrollmentSerializer,
     OnlineClassPaymentSerializer,
     OnlineClassReviewSerializer,
     OnlineClassSerializer,
+    OnlineClassSessionMaterialSerializer,
     OnlineClassSessionSerializer,
 )
 from .services import (
+    compute_attended_sessions,
     create_enrollment_and_payment,
     create_renewal_payment,
     kick_overdue_unpaid_enrollments,
     kick_student_by_tutor,
+    notify_active_students_session_update,
     send_due_payment_reminders,
     verify_online_class_payment,
 )
@@ -76,8 +82,15 @@ class PublicOnlineClassListView(APIView):
         if level:
             queryset = queryset.filter(level__icontains=level)
 
+        from core.pagination import paginate_if_requested
+
         return Response(
-            OnlineClassSerializer(queryset, many=True, context={"request": request}).data
+            paginate_if_requested(
+                request,
+                queryset,
+                OnlineClassSerializer,
+                serializer_context={"request": request},
+            )
         )
 
 
@@ -87,7 +100,11 @@ class PublicOnlineClassDetailView(APIView):
     def get(self, request, pk):
         online_class = (
             OnlineClass.objects.select_related("tutor__user", "subject")
-            .prefetch_related("sessions", "reviews__student", "enrollments")
+            .prefetch_related(
+                "sessions__materials__uploaded_by",
+                "reviews__student",
+                "enrollments",
+            )
             .filter(pk=pk)
             .first()
         )
@@ -116,12 +133,19 @@ class PublicOnlineClassDetailView(APIView):
                     enrollment, context={"request": request}
                 ).data
         data["my_enrollment"] = my_enrollment
-        if not my_enrollment or my_enrollment.get("status") != "active":
-            if (
-                not request.user.is_authenticated
-                or (online_class.tutor.user_id != request.user.id and not request.user.is_staff)
-            ):
-                data["meeting_link"] = ""
+        has_room_access = bool(
+            (my_enrollment and my_enrollment.get("status") in ("active", "completed"))
+            or (
+                request.user.is_authenticated
+                and (online_class.tutor.user_id == request.user.id or request.user.is_staff)
+            )
+        )
+        if not has_room_access:
+            data["meeting_link"] = ""
+            for s in data.get("sessions") or []:
+                s["notes"] = ""
+                s["materials"] = []
+                s["material_url"] = ""
         return Response(data)
 
 
@@ -267,7 +291,10 @@ class StudentMyOnlineClassesView(APIView):
             if item.status != "active":
                 serialized["online_class_detail"]["meeting_link"] = ""
             results.append(serialized)
-        return Response(results)
+
+        from core.pagination import paginate_if_requested
+
+        return Response(paginate_if_requested(request, results))
 
 
 class StudentOnlineClassReviewCreateView(APIView):
@@ -323,7 +350,12 @@ class TutorOnlineClassListCreateView(APIView):
         classes = (
             OnlineClass.objects.filter(tutor=tutor)
             .select_related("tutor__user", "subject")
-            .prefetch_related("sessions", "enrollments__student", "enrollments__payments", "reviews")
+            .prefetch_related(
+                "sessions__materials__uploaded_by",
+                "enrollments__student",
+                "enrollments__payments",
+                "reviews",
+            )
         )
         return Response(OnlineClassSerializer(classes, many=True, context={"request": request}).data)
 
@@ -334,7 +366,9 @@ class TutorOnlineClassListCreateView(APIView):
             return Response(
                 {"error": "Không tìm thấy hồ sơ gia sư."}, status=status.HTTP_404_NOT_FOUND
             )
-        serializer = OnlineClassSerializer(data=request.data, context={"request": request})
+        serializer = OnlineClassSerializer(
+            data=request.data, context={"request": request, "tutor": tutor}
+        )
         serializer.is_valid(raise_exception=True)
         online_class = serializer.save(tutor=tutor)
         return Response(
@@ -349,7 +383,12 @@ class TutorOnlineClassDetailView(APIView):
     def get(self, request, pk):
         online_class = (
             OnlineClass.objects.select_related("tutor__user", "subject")
-            .prefetch_related("sessions", "enrollments__student", "enrollments__payments", "reviews__student")
+            .prefetch_related(
+                "sessions__materials__uploaded_by",
+                "enrollments__student",
+                "enrollments__payments",
+                "reviews__student",
+            )
             .filter(pk=pk, tutor__user=request.user)
             .first()
         )
@@ -358,13 +397,110 @@ class TutorOnlineClassDetailView(APIView):
                 {"error": "Không tìm thấy lớp học online."}, status=status.HTTP_404_NOT_FOUND
             )
         data = OnlineClassSerializer(online_class, context={"request": request}).data
-        data["enrollments"] = OnlineClassEnrollmentSerializer(
-            online_class.enrollments.all(), many=True, context={"request": request}
-        ).data
+        data["enrollments_count"] = online_class.enrollments.count()
         data["reviews"] = OnlineClassReviewSerializer(
             online_class.reviews.all(), many=True
         ).data
         return Response(data)
+
+
+class TutorOnlineClassStudentsPaymentsView(APIView):
+    """Dedicated endpoint returning student roster & tuition payment logs for an online class."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    STATUS_LABELS = {
+        "pending_payment": "Chờ thanh toán",
+        "active": "Đang học",
+        "completed": "Hoàn thành",
+        "kicked_by_tutor": "Mời rời lớp",
+        "kicked_unpaid": "Quá hạn học phí (rời lớp)",
+        "cancelled": "Đã hủy",
+    }
+
+    def get(self, request, pk):
+        online_class = OnlineClass.objects.filter(pk=pk, tutor__user=request.user).first()
+        if not online_class:
+            return Response(
+                {"error": "Không tìm thấy lớp học online."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        enrollments = (
+            online_class.enrollments.select_related("student")
+            .prefetch_related("payments")
+            .all()
+        )
+        rows = []
+        for enr in enrollments:
+            student_name = (
+                enr.student.get_full_name() or enr.student.username or enr.student.email
+            ).strip()
+            paid_list = sorted(
+                [p for p in enr.payments.all() if p.status == "paid"],
+                key=lambda p: p.paid_at or p.created_at,
+            )
+            payments_payload = [
+                {
+                    "id": p.id,
+                    "amount": str(p.amount),
+                    "billing_cycle": p.billing_cycle,
+                    "sessions_covered": p.sessions_covered,
+                    "payos_order_code": p.payos_order_code,
+                    "paid_date": (p.paid_at or p.created_at).date().isoformat(),
+                }
+                for p in paid_list
+            ]
+            paid_sum = sum((Decimal(p.amount) for p in paid_list), Decimal("0"))
+            total_paid = paid_sum if paid_list else Decimal(enr.total_paid_amount or 0)
+            rows.append(
+                {
+                    "id": enr.id,
+                    "enrollment_id": enr.id,
+                    "student_id": enr.student_id,
+                    "student_name": student_name,
+                    "student_email": enr.student.email,
+                    "billing_cycle": enr.billing_cycle,
+                    "sessions_paid_total": enr.sessions_paid_total,
+                    "sessions_attended": compute_attended_sessions(enr),
+                    "computed_attended_sessions": compute_attended_sessions(enr),
+                    "payments": payments_payload,
+                    "total_paid_amount": str(total_paid),
+                    "status": enr.status,
+                    "status_label": self.STATUS_LABELS.get(enr.status, enr.status),
+                    "kick_type": enr.kick_type,
+                    "kick_reason": enr.kick_reason or "",
+                    "refund_amount": str(enr.refund_amount or Decimal("0")),
+                    "refund_status": enr.refund_status,
+                    "next_payment_due_date": (
+                        enr.next_payment_due_date.isoformat()
+                        if enr.next_payment_due_date
+                        else None
+                    ),
+                }
+            )
+
+        rows.sort(key=lambda r: r["student_name"].lower())
+        if request.query_params.get("page") is not None:
+            from core.pagination import paginate_items
+
+            paginated = paginate_items(request, rows, default_page_size=10)
+            return Response(
+                {
+                    "class_id": online_class.id,
+                    "class_title": online_class.title,
+                    "total_students": len(rows),
+                    "students": paginated["results"],
+                    "pagination": paginated,
+                }
+            )
+        return Response(
+            {
+                "class_id": online_class.id,
+                "class_title": online_class.title,
+                "total_students": len(rows),
+                "students": rows,
+            }
+        )
 
     def patch(self, request, pk):
         online_class = OnlineClass.objects.filter(pk=pk, tutor__user=request.user).first()
@@ -373,7 +509,10 @@ class TutorOnlineClassDetailView(APIView):
                 {"error": "Không tìm thấy lớp học online."}, status=status.HTTP_404_NOT_FOUND
             )
         serializer = OnlineClassSerializer(
-            online_class, data=request.data, partial=True, context={"request": request}
+            online_class,
+            data=request.data,
+            partial=True,
+            context={"request": request, "tutor": online_class.tutor},
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -399,17 +538,131 @@ class TutorOnlineClassSessionUpdateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request, session_id):
-        session = OnlineClassSession.objects.select_related("online_class__tutor").filter(
-            pk=session_id, online_class__tutor__user=request.user
-        ).first()
+        session = (
+            OnlineClassSession.objects.select_related("online_class__tutor")
+            .filter(pk=session_id, online_class__tutor__user=request.user)
+            .first()
+        )
         if not session:
             return Response(
                 {"error": "Không tìm thấy buổi học."}, status=status.HTTP_404_NOT_FOUND
             )
-        serializer = OnlineClassSessionSerializer(session, data=request.data, partial=True)
+        old_notes = session.notes
+        serializer = OnlineClassSessionSerializer(
+            session, data=request.data, partial=True, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(OnlineClassSessionSerializer(session).data)
+
+        notified = 0
+        if "notes" in request.data and (session.notes or "").strip() and session.notes != old_notes:
+            notified = notify_active_students_session_update(
+                online_class=session.online_class,
+                session=session,
+                action_title="Lời nhắn mới từ gia sư",
+                detail_text=session.notes.strip()[:240],
+            )
+
+        data = OnlineClassSessionSerializer(session, context={"request": request}).data
+        data["notified_students"] = notified
+        return Response(data)
+
+
+class TutorOnlineClassSessionMaterialCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def post(self, request, session_id):
+        session = (
+            OnlineClassSession.objects.select_related("online_class__tutor")
+            .filter(pk=session_id, online_class__tutor__user=request.user)
+            .first()
+        )
+        if not session:
+            return Response(
+                {"error": "Không tìm thấy buổi học."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+        material_type = (request.data.get("material_type") or "note").strip()
+        if material_type not in dict(OnlineClassSessionMaterial.MATERIAL_TYPES):
+            return Response(
+                {"error": "Loại tài liệu không hợp lệ."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        title = (request.data.get("title") or "").strip()
+        content = (request.data.get("content") or "").strip()
+        external_url = (request.data.get("external_url") or "").strip()
+        uploaded_file = request.FILES.get("file")
+
+        if material_type == "link" and not external_url and content:
+            external_url = content
+
+        if not title:
+            title = (
+                getattr(uploaded_file, "name", "")
+                or external_url
+                or f"Tài liệu buổi {session.session_number}"
+            )
+
+        if material_type in ("file", "image", "video") and not uploaded_file and not external_url:
+            return Response(
+                {"error": "Vui lòng chọn file tải lên hoặc nhập đường dẫn."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if material_type == "note" and not content:
+            return Response(
+                {"error": "Vui lòng nhập nội dung ghi chú."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        material = OnlineClassSessionMaterial.objects.create(
+            session=session,
+            uploaded_by=request.user,
+            material_type=material_type,
+            title=title,
+            content=content,
+            file=uploaded_file,
+            external_url=external_url,
+        )
+
+        notified = notify_active_students_session_update(
+            online_class=session.online_class,
+            session=session,
+            action_title="Tài liệu buổi học mới",
+            detail_text=f"{material.get_material_type_display()}: {material.title}",
+        )
+        return Response(
+            {
+                "material": OnlineClassSessionMaterialSerializer(
+                    material, context={"request": request}
+                ).data,
+                "notified_students": notified,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class TutorOnlineClassSessionMaterialDeleteView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, material_id):
+        material = (
+            OnlineClassSessionMaterial.objects.select_related(
+                "session__online_class__tutor"
+            )
+            .filter(
+                pk=material_id,
+                session__online_class__tutor__user=request.user,
+            )
+            .first()
+        )
+        if not material:
+            return Response(
+                {"error": "Không tìm thấy tài liệu."}, status=status.HTTP_404_NOT_FOUND
+            )
+        material.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class TutorKickStudentView(APIView):

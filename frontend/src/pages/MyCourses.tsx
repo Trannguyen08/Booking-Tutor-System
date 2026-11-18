@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BookOpen, Calendar, CheckCircle2, Clock, GraduationCap, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 import { useStudentCourses } from '../hooks/useCourses';
 
 const statusConfig: Record<string, { label: string; className: string }> = {
@@ -25,12 +26,14 @@ const SummaryCard = ({ icon: Icon, label, value, color }: any) => (
 
 const MyCourses: React.FC = () => {
   const navigate = useNavigate();
+  const [page, setPage] = useState(1);
   const { data, loading, fetchCourses } = useStudentCourses();
 
   useEffect(() => { fetchCourses(); }, [fetchCourses]);
 
   const summary = data?.summary;
   const courses: any[] = data?.courses || [];
+  const pagedCourses = useClientPagination(courses, page, 10);
 
   return (
     <div className="min-h-screen bg-gray-50/50 p-6 md:p-10">
@@ -67,8 +70,9 @@ const MyCourses: React.FC = () => {
             </button>
           </div>
         ) : (
+          <>
           <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {courses.map((course, i) => {
+            {pagedCourses.pagedItems.map((course, i) => {
               const cfg = statusConfig[course.status] || statusConfig.active;
               const progress = course.total_sessions > 0
                 ? Math.round((course.completed_sessions / course.total_sessions) * 100)
@@ -148,6 +152,14 @@ const MyCourses: React.FC = () => {
               );
             })}
           </div>
+          <Pagination
+            currentPage={pagedCourses.currentPage}
+            totalCount={pagedCourses.totalCount}
+            pageSize={pagedCourses.pageSize}
+            totalPages={pagedCourses.totalPages}
+            onPageChange={setPage}
+          />
+          </>
         )}
       </div>
     </div>

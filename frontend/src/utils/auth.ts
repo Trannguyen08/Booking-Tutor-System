@@ -12,6 +12,7 @@ const TUTOR_PORTAL_PATHS = new Set([
   'settings',
   'courses',
   'online-classes',
+  'analytics',
 ]);
 
 const AUTH_KEYS: Record<AuthRole, { access: string; refresh: string; user: string }> = {

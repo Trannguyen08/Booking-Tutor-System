@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { adminApi } from '../../api/admin';
 import { formatCurrency, formatDate } from '../../utils/format';
+import { Pagination } from '../../components/ui/Pagination';
 import { useToast } from '../../components/ui/Toast';
 
 const toArray = (data: any) => {
@@ -47,7 +48,7 @@ const Badge = ({ value, tone = 'slate' }: { value: string; tone?: string }) => {
     amber: 'border-amber-200 bg-amber-50 text-amber-700',
     rose: 'border-rose-200 bg-rose-50 text-rose-700',
   };
-  return <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
+  return <span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-black ${tones[tone] || tones.slate}`}>{value}</span>;
 };
 
 const Toolbar = ({ children }: { children: React.ReactNode }) => (
@@ -70,18 +71,29 @@ const Select = (props: any) => (
   <select {...props} className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm font-bold text-slate-700 outline-none" />
 );
 
+const paymentLabels: Record<string, string> = {
+  unpaid: 'Chưa trả',
+  pending: 'Đang chờ PayOS',
+  paid: 'Đã thanh toán',
+  failed: 'Thanh toán lỗi',
+  cancelled: 'Đã hủy',
+};
+
 export const PaymentManagement: React.FC = () => {
   const now = new Date();
   const [data, setData] = useState<any>(null);
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
-  useEffect(() => { adminApi.getPayments({ month, year }).then(setData); }, [month, year]);
+  const [page, setPage] = useState(1);
+  useEffect(() => { adminApi.getPayments({ month, year, page, page_size: 10 }).then(setData).catch(() => setData({ items: [], summary: {} })); }, [month, year, page]);
   const summary = data?.summary || {};
+  const pagination = data?.pagination;
+  const rows = toArray(data);
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <PageTitle icon={CreditCard} title="Đối soát thanh toán" subtitle="Theo dõi giao dịch PayOS, cọc booking, trạng thái lỗi và hủy." />
-        <div className="flex gap-3"><Select value={month} onChange={(e: any) => setMonth(Number(e.target.value))}>{Array.from({ length: 12 }, (_, i) => i + 1).map(item => <option key={item} value={item}>Tháng {item}</option>)}</Select><Select value={year} onChange={(e: any) => setYear(Number(e.target.value))}>{years.map(item => <option key={item} value={item}>{item}</option>)}</Select></div>
+        <div className="flex gap-3"><Select value={month} onChange={(e: any) => { setMonth(Number(e.target.value)); setPage(1); }}>{Array.from({ length: 12 }, (_, i) => i + 1).map(item => <option key={item} value={item}>Tháng {item}</option>)}</Select><Select value={year} onChange={(e: any) => { setYear(Number(e.target.value)); setPage(1); }}>{years.map(item => <option key={item} value={item}>{item}</option>)}</Select></div>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         {[
@@ -96,10 +108,23 @@ export const PaymentManagement: React.FC = () => {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[960px] text-left">
             <thead><tr className="border-b border-slate-200 bg-slate-50">{['Mã', 'Học viên', 'Gia sư', 'Số tiền', 'PayOS', 'Trạng thái'].map(h => <th key={h} className="px-5 py-4 text-xs font-black uppercase text-slate-500">{h}</th>)}</tr></thead>
-            <tbody className="divide-y divide-slate-100">{toArray(data).map((item: any) => (
-              <tr key={item.id}><td className="px-5 py-4 font-black">#{item.id}</td><td className="px-5 py-4">{item.student_name}</td><td className="px-5 py-4">{item.tutor_name}</td><td className="px-5 py-4 font-black">{formatCurrency(Number(item.total_price || 0))}</td><td className="px-5 py-4 text-xs text-slate-500">{item.payos_order_code || '---'}</td><td className="px-5 py-4"><Badge value={item.payment_status} tone={item.payment_status === 'paid' ? 'green' : item.payment_status === 'failed' ? 'rose' : 'amber'} /></td></tr>
-            ))}</tbody>
+            <tbody className="divide-y divide-slate-100">
+              {rows.length === 0 ? (
+                <tr><td colSpan={6} className="py-12 text-center font-semibold text-slate-400">Không có giao dịch trong tháng đã chọn.</td></tr>
+              ) : rows.map((item: any) => (
+                <tr key={item.id}><td className="px-5 py-4 font-black">#{item.id}</td><td className="px-5 py-4">{item.student_name}</td><td className="px-5 py-4">{item.tutor_name}</td><td className="px-5 py-4 font-black">{formatCurrency(Number(item.total_price || 0))}</td><td className="px-5 py-4 text-xs text-slate-500">{item.payos_order_code || '---'}</td><td className="px-5 py-4"><Badge value={paymentLabels[item.payment_status] || item.payment_status} tone={item.payment_status === 'paid' ? 'green' : item.payment_status === 'failed' ? 'rose' : 'amber'} /></td></tr>
+              ))}
+            </tbody>
           </table>
+        </div>
+        <div className="px-5 pb-4">
+          <Pagination
+            currentPage={pagination?.page || page}
+            totalCount={pagination?.count ?? rows.length}
+            pageSize={pagination?.page_size || 10}
+            totalPages={pagination?.total_pages}
+            onPageChange={setPage}
+          />
         </div>
       </section>
     </div>

@@ -2,7 +2,7 @@ import client, { publicClient } from './client';
 
 export const onlineClassesApi = {
   // Public & Student
-  getPublicClasses: (params?: { search?: string; subject?: string; level?: string }) =>
+  getPublicClasses: (params?: { search?: string; subject?: string; level?: string; page?: number; page_size?: number }) =>
     publicClient.get('/online-classes/public/', { params }).then(res => res.data),
   getPublicClassDetail: (id: number | string) =>
     client.get(`/online-classes/public/${id}/`).then(res => res.data)
@@ -13,8 +13,8 @@ export const onlineClassesApi = {
     client.post(`/online-classes/enrollments/${enrollmentId}/pay-next/`, billing_cycle ? { billing_cycle } : {}).then(res => res.data),
   verifyPayment: (params: { orderCode?: string | null; paymentId?: string | null }) =>
     client.post('/online-classes/payments/verify/', params).then(res => res.data),
-  getMyEnrollments: () =>
-    client.get('/online-classes/my-enrollments/').then(res => res.data),
+  getMyEnrollments: (params?: any) =>
+    client.get('/online-classes/my-enrollments/', { params }).then(res => res.data),
   createReview: (classId: number | string, data: { rating: number; comment: string }) =>
     client.post(`/online-classes/public/${classId}/review/`, data).then(res => res.data),
 
@@ -23,6 +23,8 @@ export const onlineClassesApi = {
     client.get('/online-classes/tutor/').then(res => res.data),
   getTutorClassDetail: (id: number | string) =>
     client.get(`/online-classes/tutor/${id}/`).then(res => res.data),
+  getTutorClassStudentsPayments: (id: number | string, params?: any) =>
+    client.get(`/online-classes/tutor/${id}/students-payments/`, { params }).then(res => res.data),
   createTutorClass: (data: any) =>
     client.post('/online-classes/tutor/', data).then(res => res.data),
   updateTutorClass: (id: number | string, data: any) =>
@@ -31,6 +33,12 @@ export const onlineClassesApi = {
     client.post(`/online-classes/tutor/${classId}/sessions/`, data).then(res => res.data),
   updateSession: (sessionId: number, data: any) =>
     client.patch(`/online-classes/tutor/sessions/${sessionId}/`, data).then(res => res.data),
+  createSessionMaterial: (sessionId: number, formData: FormData) =>
+    client.post(`/online-classes/tutor/sessions/${sessionId}/materials/`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then(res => res.data),
+  deleteSessionMaterial: (materialId: number) =>
+    client.delete(`/online-classes/tutor/materials/${materialId}/`),
   kickStudent: (enrollmentId: number, formData: FormData) =>
     client.post(`/online-classes/tutor/enrollments/${enrollmentId}/kick/`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

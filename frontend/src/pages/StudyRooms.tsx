@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle2, FileText, Image as ImageIcon, Link2, Video } from 'lucide-react';
 import { roomsApi } from '../api/rooms';
+import { Pagination, useClientPagination } from '../components/ui/Pagination';
 
 const typeIcon: Record<string, any> = {
   file: FileText,
@@ -11,8 +12,10 @@ const typeIcon: Record<string, any> = {
 
 const StudyRooms: React.FC = () => {
   const [rooms, setRooms] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
   const [activeRoom, setActiveRoom] = useState<any>(null);
   const [selectedSession, setSelectedSession] = useState<any>(null);
+  const pagedRooms = useClientPagination(rooms, page, 10);
 
   const fetchRooms = async () => setRooms(await roomsApi.getStudentRooms());
   const fetchRoom = async (id: number) => {
@@ -42,12 +45,21 @@ const StudyRooms: React.FC = () => {
             <div className="p-4 border-b border-slate-100 font-extrabold text-slate-900">Danh sách room</div>
             {rooms.length === 0 ? (
               <div className="p-8 text-center text-slate-400 text-sm">Bạn chưa được mời vào room nào.</div>
-            ) : rooms.map(room => (
+            ) : pagedRooms.pagedItems.map(room => (
               <button key={room.id} onClick={() => fetchRoom(room.id)} className={`w-full text-left p-4 border-b border-slate-50 hover:bg-slate-50 ${activeRoom?.id === room.id ? 'bg-indigo-50' : ''}`}>
                 <p className="font-bold text-slate-900">{room.title}</p>
                 <p className="text-xs text-slate-500 mt-1">{room.tutor_name} • {room.session_count} buổi</p>
               </button>
             ))}
+            <div className="px-4 pb-3">
+              <Pagination
+                currentPage={pagedRooms.currentPage}
+                totalCount={pagedRooms.totalCount}
+                pageSize={pagedRooms.pageSize}
+                totalPages={pagedRooms.totalPages}
+                onPageChange={setPage}
+              />
+            </div>
           </aside>
 
           {!activeRoom ? (

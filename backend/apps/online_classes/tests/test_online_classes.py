@@ -19,12 +19,13 @@ from apps.online_classes.models import (
     OnlineClassPayment,
     OnlineClassReview,
     OnlineClassSession,
+    OnlineClassSessionMaterial,
 )
 from apps.online_classes.services import (
     kick_overdue_unpaid_enrollments,
     send_due_payment_reminders,
 )
-from apps.tutors.models import Subject, TutorProfile
+from apps.tutors.models import Subject, TutorProfile, TutorSubject
 
 User = get_user_model()
 
@@ -270,3 +271,121 @@ class OnlineClassWorkflowTests(APITransactionTestCase):
 
         due_in_2_days.refresh_from_db()
         self.assertEqual(due_in_2_days.status, "active")
+
+    def test_tutor_subject_restriction_end_date_materials_email_and_payment_logs(self):
+        unregistered_subj = Subject.objects.create(
+            name="Sinh học Online", slug="sinh-hoc-online-test", category="STEM"
+        )
+        TutorSubject.objects.create(
+            tutor=self.tutor,
+            subject=self.subject,
+            level="THPT",
+            hourly_rate=Decimal("150000.00"),
+            is_active=True,
+        )
+
+        self.client.force_authenticate(self.tutor_user)
+        # Creating class for unregistered subject must be rejected
+        bad_subj_res = self.client.post(
+            reverse("tutor-online-classes"),
+            {
+                "title": "Lớp Sinh",
+                "subject": unregistered_subj.id,
+                "schedule_text": "Thứ 2 · 19:00 - 20:30",
+                "start_date": str(timezone.localdate()),
+                "end_date": str(timezone.localdate() + timedelta(days=14)),
+                "price_per_session": 100000,
+                "allowed_billing_cycles": ["per_session"],
+            },
+            format="json",
+        )
+        self.assertEqual(bad_subj_res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # end_date < start_date must be rejected
+        bad_date_res = self.client.post(
+            reverse("tutor-online-classes"),
+            {
+                "title": "Lớp Toán Ngày Sai",
+                "subject": self.subject.id,
+                "schedule_text": "Thứ 2 · 19:00 - 20:30",
+                "start_date": str(timezone.localdate() + timedelta(days=5)),
+                "end_date": str(timezone.localdate()),
+                "price_per_session": 100000,
+                "allowed_billing_cycles": ["per_session"],
+            },
+            format="json",
+        )
+        self.assertEqual(bad_date_res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Valid create with registered subject
+        ok_res = self.client.post(
+            reverse("tutor-online-classes"),
+            {
+                "title": "Lớp Toán Đăng Ký Hợp Lệ",
+                "subject": self.subject.id,
+                "schedule_text": "Thứ 2, Thứ 4 · 19:00 - 20:30",
+                "start_date": str(timezone.localdate()),
+                "end_date": str(timezone.localdate() + timedelta(days=30)),
+                "price_per_session": 100000,
+                "full_course_price": 900000,
+                "allowed_billing_cycles": ["per_session", "full_course"],
+            },
+            format="json",
+        )
+        self.assertEqual(ok_res.status_code, status.HTTP_201_CREATED)
+        cls = OnlineClass.objects.get(pk=ok_res.data["id"])
+
+        session = OnlineClassSession.objects.create(
+            online_class=cls,
+            session_number=1,
+            title="Buổi 1: Mở đầu",
+            scheduled_at=timezone.now() + timedelta(days=1),
+        )
+        enr = OnlineClassEnrollment.objects.create(
+            online_class=cls,
+            student=self.student1,
+            billing_cycle="per_session",
+            status="active",
+            sessions_paid_total=1,
+            total_paid_amount=Decimal("100000.00"),
+            joined_at=timezone.now(),
+        )
+        OnlineClassPayment.objects.create(
+            enrollment=enr,
+            student=self.student1,
+            online_class=cls,
+            billing_cycle="per_session",
+            sessions_covered=1,
+            amount=Decimal("100000.00"),
+            status="paid",
+            payos_order_code=99887766,
+            paid_at=timezone.now(),
+        )
+
+        # Tutor uploads material & saves note -> emails active student1
+        mail.outbox.clear()
+        mat_res = self.client.post(
+            reverse("tutor-online-class-session-material-create", kwargs={"session_id": session.id}),
+            {"material_type": "note", "title": "Bài tập về nhà", "content": "Làm bài 1-5."},
+            format="multipart",
+        )
+        self.assertEqual(mat_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(mat_res.data["notified_students"], 1)
+        self.assertEqual(OnlineClassSessionMaterial.objects.filter(session=session).count(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.student1.email])
+
+        # Dedicated endpoint returns student roster + tuition payment_logs
+        sp_res = self.client.get(reverse("tutor-online-class-students-payments", kwargs={"pk": cls.id}))
+        self.assertEqual(sp_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(sp_res.data["students"]), 1)
+        self.assertEqual(sp_res.data["students"][0]["payments"][0]["payos_order_code"], 99887766)
+
+        # Non-enrolled user cannot see session materials/notes; active student1 can
+        self.client.force_authenticate(self.student2)
+        anon_detail = self.client.get(reverse("online-class-public-detail", kwargs={"pk": cls.id}))
+        self.assertEqual(anon_detail.data["sessions"][0]["materials"], [])
+
+        self.client.force_authenticate(self.student1)
+        stu_detail = self.client.get(reverse("online-class-public-detail", kwargs={"pk": cls.id}))
+        self.assertEqual(len(stu_detail.data["sessions"][0]["materials"]), 1)

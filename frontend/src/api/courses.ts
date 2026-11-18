@@ -2,7 +2,7 @@ import client from './client';
 
 export const coursesApi = {
   // Student
-  getStudentCourses: () => client.get('/courses/student/').then(r => r.data),
+  getStudentCourses: (params?: any) => client.get('/courses/student/', { params }).then(r => r.data),
   getStudentCourseDetail: (id: number) => client.get(`/courses/student/${id}/`).then(r => r.data),
   completeSession: (sessionId: number) => client.post(`/courses/sessions/${sessionId}/complete/`).then(r => r.data),
   reviewCourse: (id: number, data: any) => client.post(`/courses/student/${id}/review/`, data).then(r => r.data),
@@ -13,8 +13,8 @@ export const coursesApi = {
     }).then(r => r.data),
 
   // Tutor
-  getTutorCourses: () => client.get('/courses/tutor/').then(r => r.data),
-  getTutorReviews: () => client.get('/courses/tutor/reviews/').then(r => r.data),
+  getTutorCourses: (params?: any) => client.get('/courses/tutor/', { params }).then(r => r.data),
+  getTutorReviews: (params?: any) => client.get('/courses/tutor/reviews/', { params }).then(r => r.data),
   getTutorExtensionRequests: () => client.get('/courses/tutor/extensions/').then(r => r.data),
   decideExtensionRequest: (id: number, data: any) => client.post(`/courses/tutor/extensions/${id}/decision/`, data).then(r => r.data),
   getTutorCourseDetail: (id: number) => client.get(`/courses/tutor/${id}/`).then(r => r.data),
